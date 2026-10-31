@@ -407,9 +407,9 @@ else
   MODEL_PROVIDER="$(prompt_value 'Hermes model provider' "$(answer_default MODEL_PROVIDER openai-codex)")"
   MODEL_NAME="$(prompt_value 'Hermes model' "$(answer_default MODEL_NAME gpt-5.6-luna)")"
 
-  HERMES_AGENT_IMAGE="$(prompt_value 'Hermes Agent container image' "$(answer_default HERMES_AGENT_IMAGE nousresearch/hermes-agent:latest)")"
-  HERMES_WEBUI_IMAGE="$(prompt_value 'Hermes WebUI container image' "$(answer_default HERMES_WEBUI_IMAGE ghcr.io/nesquena/hermes-webui:latest)")"
-  HERMES_BROWSER_IMAGE="$(prompt_value 'Browserless Chromium container image' "$(answer_default HERMES_BROWSER_IMAGE ghcr.io/browserless/chromium:latest)")"
+  HERMES_AGENT_IMAGE="$(prompt_value 'Hermes Agent container image' "$(answer_default HERMES_AGENT_IMAGE nousresearch/hermes-agent:v0.22.5)")"
+  HERMES_WEBUI_IMAGE="$(prompt_value 'Hermes WebUI container image' "$(answer_default HERMES_WEBUI_IMAGE ghcr.io/nesquena/hermes-webui:0.52.602)")"
+  HERMES_BROWSER_IMAGE="$(prompt_value 'Browserless Chromium container image' "$(answer_default HERMES_BROWSER_IMAGE ghcr.io/browserless/chromium:v2.58.1)")"
   HERMES_IMAGE_PULL_POLICY="$(answer_default HERMES_IMAGE_PULL_POLICY IfNotPresent)"
   while true; do
     read -r -p "Image pull policy [$HERMES_IMAGE_PULL_POLICY] (IfNotPresent/Always): " image_pull_policy
@@ -555,9 +555,9 @@ HERMES_ANSIBLE_VERSION="${HERMES_ANSIBLE_VERSION:-}"
 HERMES_ADDON_PYTHON_VERSION="${HERMES_ADDON_PYTHON_VERSION:-}"
 MODEL_PROVIDER="${MODEL_PROVIDER:-openai-codex}"
 MODEL_NAME="${MODEL_NAME:-gpt-5.6-luna}"
-HERMES_AGENT_IMAGE="${HERMES_AGENT_IMAGE:-nousresearch/hermes-agent:latest}"
-HERMES_WEBUI_IMAGE="${HERMES_WEBUI_IMAGE:-ghcr.io/nesquena/hermes-webui:latest}"
-HERMES_BROWSER_IMAGE="${HERMES_BROWSER_IMAGE:-ghcr.io/browserless/chromium:latest}"
+HERMES_AGENT_IMAGE="${HERMES_AGENT_IMAGE:-nousresearch/hermes-agent:v0.22.5}"
+HERMES_WEBUI_IMAGE="${HERMES_WEBUI_IMAGE:-ghcr.io/nesquena/hermes-webui:0.52.602}"
+HERMES_BROWSER_IMAGE="${HERMES_BROWSER_IMAGE:-ghcr.io/browserless/chromium:v2.58.1}"
 HERMES_IMAGE_PULL_POLICY="${HERMES_IMAGE_PULL_POLICY:-IfNotPresent}"
 [[ "$MODEL_PROVIDER" =~ ^[A-Za-z0-9._:/-]+$ ]] || { printf 'ERROR: invalid model provider.\n' >&2; exit 1; }
 [[ "$MODEL_NAME" =~ ^[A-Za-z0-9._:/-]+$ ]] || { printf 'ERROR: invalid model name.\n' >&2; exit 1; }

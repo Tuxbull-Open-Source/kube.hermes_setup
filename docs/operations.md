@@ -15,7 +15,9 @@
 
 ## Upgrade
 
-Pin image tags in `current_config/hermes.env`, then run:
+The example configuration and configurator default to release-tested image tags.
+For a newer reviewed release, update the three image references in
+`current_config/hermes.env`, then run:
 
 ```bash
 ./install.sh
@@ -24,7 +26,7 @@ Pin image tags in `current_config/hermes.env`, then run:
 
 `install.sh` is re-runnable. It recreates the one-shot `hermes-init-config` Job before applying the manifest so Kubernetes Job immutability does not break upgrades/retries.
 
-For a pull-latest style restart:
+For an explicitly selected image update, use:
 
 ```bash
 ./maintain.sh upgrade

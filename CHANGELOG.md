@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [v2.7.7] - 2026-10-31
+
+### Changed
+
+- Replaces mutable container-image defaults with verified release tags:
+  `nousresearch/hermes-agent:v0.22.5`,
+  `ghcr.io/nesquena/hermes-webui:0.52.602`, and
+  `ghcr.io/browserless/chromium:v2.58.1`.
+- Keeps `HERMES_IMAGE_PULL_POLICY=IfNotPresent`; operators can still override
+  an image reference deliberately for a reviewed upgrade.
+
+### Verification
+
+- Confirmed each selected tag resolves to an OCI/Docker registry manifest before
+  release preparation. Live K3s acceptance remains required before merge.
+
 ## [v2.7.6] - 2026-10-31
 
 ### Fixed
