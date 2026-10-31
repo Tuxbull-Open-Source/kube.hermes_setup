@@ -45,7 +45,7 @@ for needle in \
   'checks only whether `bin/python` is executable and the `.hermes-uv-managed` marker exists' \
   'other corruption can fail later package operations and requires a controlled manual rebuild' \
   '`/usr/local/bin/node`' \
-  '`/usr/local/lib/node_modules/npm`' \
+  '`npm root -g`' \
   'hard compatibility contract for a custom Agent image' \
   'must be a self-contained real directory tree' \
   'must be relative and resolve to a target inside the npm tree' \

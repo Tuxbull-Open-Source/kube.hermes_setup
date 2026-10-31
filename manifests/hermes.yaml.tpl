@@ -840,7 +840,10 @@ spec:
           set -eu
           node_root=/opt/data/node
           node_source=/usr/local/bin/node
-          npm_source=/usr/local/lib/node_modules/npm
+          # Recent Hermes Agent images install npm beneath their bundled Node
+          # runtime. Resolve its supported global package root instead of
+          # assuming a legacy /usr/local/lib location.
+          npm_source="$(npm root -g)/npm"
           runtimes="$node_root/runtimes"
           repairs="$node_root/repairs"
           mkdir -p "$node_root/bin" "$runtimes" "$repairs"
