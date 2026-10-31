@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [v2.7.8] - 2026-10-31
+
+### Fixed
+
+- Resolves the npm payload for WebUI's managed Node runtime through `npm root -g`
+  in `HERMES_AGENT_IMAGE` instead of assuming the legacy
+  `/usr/local/lib/node_modules/npm` prefix. This supports Hermes Agent v0.22.5's
+  bundled Node layout and prevents `prepare-browser-cli` from blocking WebUI
+  startup.
+
+### Verification
+
+- Adds a launcher regression assertion for global npm-root discovery. Live QA
+  covers the v0.22.5 Agent image and the complete WebUI startup path.
+
 ## [v2.7.7] - 2026-10-31
 
 ### Changed

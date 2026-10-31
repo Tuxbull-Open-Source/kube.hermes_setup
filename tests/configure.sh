@@ -329,6 +329,9 @@ fi
 
 config_two="$TMP_DIR/current-two"
 answers_two="$TMP_DIR/answers-two"
+# The interactive wizard must not reuse any process-level password. Passwords
+# are prompt-only and must never be persisted into hermes.env or answer replay.
+unset DASHBOARD_AUTH_PASSWORD
 printf '\n\nopenrouter\nopenai/gpt-5.6\n\n\n\n\ny\ny\ny\nchat.example.com\nadmin.example.com\n\noperator\n\nn\nn\nn\nn\n' | \
   "$ROOT_DIR/configure.sh" --no-install --config-dir "$config_two" --answers-file "$answers_two" >/dev/null
 # shellcheck disable=SC1090

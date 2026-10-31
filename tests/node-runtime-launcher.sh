@@ -39,6 +39,7 @@ assert 'LD_LIBRARY_PATH' not in env, 'WebUI still replaces the image-defined LD_
 init=next(x for x in pod['initContainers'] if x['name']=='prepare-browser-cli')
 script=init['args'][0]
 assert 'node_root=/opt/data/node' in script
+assert 'npm_source="$(npm root -g)/npm"' in script
 assert 'runtimes="$node_root/runtimes"' in script
 assert 'runtime_stage="$runtimes/.$runtime_key.$$"' in script
 assert 'mv -fT "$current_tmp" "$node_root/current"' in script
@@ -90,7 +91,7 @@ script,runtime,source=map(Path,sys.argv[1:])
 text=script.read_text()
 text=text.replace('/opt/data/node',str(runtime))
 text=text.replace('/usr/local/bin/node',str(source/'bin/node'))
-text=text.replace('/usr/local/lib/node_modules/npm',str(source/'npm'))
+text=text.replace('npm_source="$(npm root -g)/npm"',f'npm_source={source / "npm"}')
 text=text.replace('/home/hermeswebui/.hermes/hermes-agent/node_modules',str(source/'agent-node-modules'))
 text=text.replace('chown -R 10000:10000',': # ownership skipped in fixture')
 script.write_text(text)
