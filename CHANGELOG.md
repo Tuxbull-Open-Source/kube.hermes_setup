@@ -13,6 +13,22 @@ All notable changes to this project are documented in this file.
   and the need to reconcile complete Kubernetes environment and volume lists so
   stale SMTP wiring cannot survive a provider change and prevent startup.
 
+## [v2.7.6] - 2026-10-31
+
+### Fixed
+
+- Uses `fsGroupChangePolicy: Always` for the PVC-consuming Hermes Agent,
+  Dashboard, and WebUI Deployments. This ensures kubelet applies group
+  ownership and permissions after a filesystem restore even when the PVC root
+  already has the expected GID but retains restrictive mode bits that block a
+  restore-injected init container.
+
+### Verification
+
+- Adds rendered-manifest assertions for the `Always` policy on the
+  PVC-consuming Deployments and confirms that the stateless Browserless
+  Deployment does not receive an fsGroup policy.
+
 ## [v2.7.5] - 2026-09-04
 
 ### Added

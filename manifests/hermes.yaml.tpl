@@ -48,7 +48,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         fsGroup: ${HERMES_RUNTIME_GID}
-        fsGroupChangePolicy: OnRootMismatch
+        fsGroupChangePolicy: Always
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -466,7 +466,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         fsGroup: ${HERMES_RUNTIME_GID}
-        fsGroupChangePolicy: OnRootMismatch
+        fsGroupChangePolicy: Always
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -618,7 +618,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         fsGroup: ${HERMES_RUNTIME_GID}
-        fsGroupChangePolicy: OnRootMismatch
+        fsGroupChangePolicy: Always
         seccompProfile:
           type: RuntimeDefault
       initContainers:
@@ -785,7 +785,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         fsGroup: ${HERMES_RUNTIME_GID}
-        fsGroupChangePolicy: OnRootMismatch
+        fsGroupChangePolicy: Always
         seccompProfile:
           type: RuntimeDefault
       initContainers:

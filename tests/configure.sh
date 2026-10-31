@@ -473,7 +473,10 @@ for document in yaml.safe_load_all(open(sys.argv[1])):
     pod = document['spec']['template']['spec']
     assert pod['automountServiceAccountToken'] is False
     assert pod['securityContext']['seccompProfile']['type'] == 'RuntimeDefault'
+    if document['metadata']['name'] in ('hermes-agent', 'hermes-dashboard', 'hermes-webui'):
+        assert pod['securityContext']['fsGroupChangePolicy'] == 'Always'
     if document['metadata']['name'] == 'hermes-browser':
+        assert 'fsGroupChangePolicy' not in pod['securityContext']
         container = pod['containers'][0]
         assert container['securityContext']['runAsUser'] == 999
         assert container['securityContext']['runAsGroup'] == 999
