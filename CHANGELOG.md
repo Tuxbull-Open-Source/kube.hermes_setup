@@ -22,12 +22,18 @@ All notable changes to this project are documented in this file.
   ownership and permissions after a filesystem restore even when the PVC root
   already has the expected GID but retains restrictive mode bits that block a
   restore-injected init container.
+- Restores mode `0600` for the exact configured `HERMES_SSH_KEY_PATH` in every
+  PVC-consuming Deployment init container. This preserves OpenSSH-compatible
+  private-key permissions for supported custom key basenames after kubelet's
+  mount-time fsGroup permission pass.
 
 ### Verification
 
 - Adds rendered-manifest assertions for the `Always` policy on the
   PVC-consuming Deployments and confirms that the stateless Browserless
   Deployment does not receive an fsGroup policy.
+- Extends the SSH identity regression test with a custom key basename and a
+  simulated group-readable mode before a repeated initialization.
 
 ## [v2.7.5] - 2026-09-04
 

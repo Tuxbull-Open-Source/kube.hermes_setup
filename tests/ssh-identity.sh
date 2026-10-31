@@ -68,6 +68,8 @@ for deployment_name in ("hermes-agent", "hermes-dashboard", "hermes-webui"):
         for init in deployment["spec"]["template"]["spec"].get("initContainers", [])
         for arg in init.get("args", [])
     )
+    assert '[ ! -f "/opt/data/.ssh/id_ed25519" ] || chmod 600 "/opt/data/.ssh/id_ed25519"' in init_scripts, deployment_name
+    assert '[ ! -f "/opt/data/.ssh/id_ed25519.pub" ] || chmod 644 "/opt/data/.ssh/id_ed25519.pub"' in init_scripts, deployment_name
     assert "chmod 600 /opt/data/.ssh/config" in init_scripts, deployment_name
     assert "chmod 755 /opt/data/hermes-managed/bin/ssh" in init_scripts, deployment_name
 
@@ -143,10 +145,23 @@ printf '%s\n' stale-wrapper > "$disabled_home/hermes-managed/bin/ssh"
 [[ "$(stat -c %a "$home/hermes-managed/bin/ssh")" == 755 ]]
 [[ "$(find "$home/.ssh" -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' | wc -l)" == 1 ]]
 
-first_fingerprint="$(ssh-keygen -lf "$home/.ssh/id_ed25519.pub" | awk '{print $2}')"
+# A configured identity name is not limited to id_*. Re-run the rendered SSH
+# initialization with a custom supported path and prove it repairs restrictive
+# private-key mode after a mount-time fsGroup permission pass.
+custom_key="$home/.ssh/hermes_key"
+rm -f "$home/.ssh/id_ed25519" "$home/.ssh/id_ed25519.pub"
+ssh-keygen -q -t ed25519 -N '' -f "$custom_key"
+chmod 660 "$custom_key"
+sed 's#id_ed25519#hermes_key#g' "$TMP_DIR/run-ssh-init.sh" > "$TMP_DIR/run-custom-ssh-init.sh"
+chmod 700 "$TMP_DIR/run-custom-ssh-init.sh"
+"$TMP_DIR/run-custom-ssh-init.sh"
+[[ "$(stat -c %a "$custom_key")" == 600 ]]
+[[ "$(stat -c %a "$custom_key.pub")" == 644 ]]
+
+first_fingerprint="$(ssh-keygen -lf "$custom_key.pub" | awk '{print $2}')"
 printf '%s\n' 'Host operator.example' '    User preserved-operator' '    HashKnownHosts no' >> "$home/.ssh/config"
-"$TMP_DIR/run-ssh-init.sh"
-second_fingerprint="$(ssh-keygen -lf "$home/.ssh/id_ed25519.pub" | awk '{print $2}')"
+"$TMP_DIR/run-custom-ssh-init.sh"
+second_fingerprint="$(ssh-keygen -lf "$custom_key.pub" | awk '{print $2}')"
 [[ "$first_fingerprint" == "$second_fingerprint" ]]
 [[ "$(grep -Fc '# BEGIN kube.hermes_setup SSH identity' "$home/.ssh/config")" == 1 ]]
 [[ "$(grep -Fc '# BEGIN kube.hermes_setup system SSH config' "$home/.ssh/config")" == 1 ]]
@@ -181,7 +196,7 @@ grep -Fqx helper-ran "$proxy_marker"
 ! grep -Fq 'exec env PATH=' "$home/hermes-managed/bin/ssh"
 
 ssh_effective="$(PATH="$home/hermes-managed/bin:$PATH" ssh -G example.invalid 2>/dev/null)"
-grep -Fqx "identityfile $home/.ssh/id_ed25519" <<< "$ssh_effective"
+grep -Fqx "identityfile $custom_key" <<< "$ssh_effective"
 grep -Fqx 'identitiesonly yes' <<< "$ssh_effective"
 
 for defaults in "$ROOT_DIR"/examples/bootstrap-profiles/*/defaults.conf; do
