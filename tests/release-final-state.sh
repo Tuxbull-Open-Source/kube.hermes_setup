@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Enforce the supported v2.7.6 release shape and reject experimental PoC artifacts.
+# Enforce the supported v2.7.7 release shape and reject experimental PoC artifacts.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-[[ "$(<VERSION)" == 2.7.6 ]]
+[[ "$(<VERSION)" == 2.7.7 ]]
+grep -Fq '## [v2.7.7] - 2026-10-31' CHANGELOG.md
 grep -Fq '## [v2.7.6] - 2026-10-31' CHANGELOG.md
 grep -Fq '## [v2.7.5] - 2026-09-04' CHANGELOG.md
 grep -Fq '## [v2.7.3] - 2026-08-29' CHANGELOG.md
@@ -65,4 +66,4 @@ grep -Fq '| Hermes Dashboard OIDC ID-token contract | Not supported | 12h |' doc
 grep -Fq 'Dashboard OIDC ID token reaches its configured 12-hour lifetime' docs/authelia-freeipa-sso-setup-guide.md
 ! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/authelia-freeipa-sso-setup-guide.md
 
-printf 'v2.7.6 final-state contract passed\n'
+printf 'v2.7.7 final-state contract passed\n'
