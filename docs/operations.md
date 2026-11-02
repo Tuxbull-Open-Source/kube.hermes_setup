@@ -32,146 +32,30 @@ For an explicitly selected image update, use:
 ./maintain.sh upgrade
 ```
 
-## Backup
+## Backup and recovery (operator-owned Velero)
 
-```bash
-mkdir -p backups
-./maintain.sh backup ./backups/hermes-$(date -u +%Y%m%dT%H%M%SZ).age
-```
+Backup and recovery are owned by the operator's Velero deployment, not this
+installer. `maintain.sh` no longer provides `backup`, `restore` or `extract`.
+There is no automatic conversion of older archives and no deletion of existing
+archives, private configuration, PVCs or Secrets. Keep any legacy recovery tools
+and passphrases under your separate retention policy.
 
-The archive is encrypted with `age`. Install it on Fedora/RHEL hosts with:
-
-```bash
-dnf install age
-```
-
-By default, backup and restore prompt for the passphrase without echoing it. For automation use `--password-stdin` or `--password-file PATH`; the latter requires mode `0600` or `0640`. Password-file mode supplies the value through a no-echo pseudo-terminal, requires the internal `age` command to write payload data through `--output`, and never forwards the captured terminal transcript. Nonzero `age` status is preserved with a generic credential-free diagnostic. This mode requires a util-linux `script` implementation with `--echo` support; older implementations reject the operation before `age` is invoked.
-
-### Data-only backup (sessions, workspace, config, skills — no runtime software)
-
-`--data-only` backs up only Hermes-specific state: WebUI sessions, `config.yaml`, `SOUL.md`, `auth.json`, profiles, skills, memories, cron jobs, plugin data, kanban/state/projects/response-store databases, `/opt/data/home`, and the full `/workspace`. It deliberately excludes reproducible runtime software that a fresh `install.sh` rebuilds on its own: the `addon-venv` Python environment, `node`/`npm`/`npx`, `uv`, LSP servers, and disposable caches/logs. It also omits the Kubernetes resource snapshot and `/opt/data/.env`, so it is namespace-agnostic and safe to restore into a different instance (see [Migrating instance/namespace data with `--data-only`](#migrating-instancenamespace-data-with---data-only) below).
-
-```bash
-./maintain.sh backup ./backups/hermes-data-$(date -u +%Y%m%dT%H%M%SZ).age --data-only
-```
-
-A data-only archive is typically a small fraction of a full backup's size, since it skips gigabytes of installed packages and virtual environments.
-
-## Extracting backup components
-
-`extract` writes selected backup content to a new or empty local directory. It never changes Kubernetes resources or PVCs:
-
-```bash
-./maintain.sh extract backup.age \
-  --output-dir ./recovery \
-  --component bootstrap
-```
-
-Supported components are:
-
-```text
-data       opt/data and workspace
-config     hermes.env, configuration_answers, backup-info.txt
-bootstrap  the saved bootstrap directory
-full       all currently supported components
-```
-
-Examples:
-
-```bash
-./maintain.sh extract backup.age --output-dir ./recovery --component data
-./maintain.sh extract backup.age --output-dir ./recovery --component config
-./maintain.sh extract backup.age --output-dir ./recovery --component bootstrap
-./maintain.sh extract backup.age --output-dir ./recovery --full
-./maintain.sh extract backup.age --output-dir ./recovery --full --dry-run
-```
-
-The output directory must be empty unless `--dry-run` is used. Existing files are never overwritten. The `full` extraction includes the encrypted snapshot metadata; use it only in a mode-0700 recovery directory because it contains base64-encoded Kubernetes Secret data. Full rollback should normally use `restore --full` rather than manually applying extracted resources.
-
-For bootstrap recovery, review the extracted files first and then apply them through the normal installer path, for example:
-
-```bash
-HERMES_BOOTSTRAP_DIR=./recovery/bootstrap \
-ENV_FILE=./recovery/hermes.env \
-./install.sh
-```
-
-Password input for extraction:
-
-```bash
-./maintain.sh extract backup.age --output-dir ./recovery --full --password-prompt
-printf '%s\n' "$BACKUP_PASSWORD" | ./maintain.sh extract backup.age --output-dir ./recovery --full --password-stdin
-./maintain.sh extract backup.age --output-dir ./recovery --full --password-file /secure/hermes-backup.pass
-```
-
-`--dry-run` decrypts and validates the archive, checks the destination, and reports the selected mode without writing files.
-
-
-## Restore
-
-A normal restore requires the Namespace, Deployments, and PVCs to exist and restores only the encrypted PVC payload:
-
-```bash
-./maintain.sh restore ./backups/hermes-YYYYmmddTHHMMSSZ.age
-./doctor.sh
-```
-
-For rollback after the Namespace or installation has been removed, use full mode:
-
-```bash
-./maintain.sh restore ./backups/hermes-YYYYmmddTHHMMSSZ.age --full
-```
-
-The backup contains a normalized, encrypted snapshot of the repository-owned Namespace, PVCs, Hermes workloads, Services, Jobs, Ingresses, NetworkPolicies, Middleware, ServiceAccounts, and application Secrets. Full mode recreates the Namespace if absent, applies those resources and Secrets, then restores the PVC payload.
-
-Before applying anything, use:
-
-```bash
-./maintain.sh restore ./backups/hermes-YYYYmmddTHHMMSSZ.age \
-  --full --dry-run --password-file /secure/hermes-backup.pass
-```
-
-Full mode requires a readable Kubernetes API server, but `--force` overrides all compatibility and targeting policy gates: missing/unknown backup K3s version, non-K3s detection, K3s version mismatch, and configured-vs-backup Namespace mismatch. With a Namespace mismatch, the restore targets the Namespace recorded in the backup. `--force` does not bypass cryptographic, archive, snapshot-schema, Kubernetes API, or resource-application failures:
-
-```bash
-./maintain.sh restore ./backups/hermes-YYYYmmddTHHMMSSZ.age --full --force
-```
-
-The helper Pod is removed on success or failure, and restored write-capable Deployments return to their snapshot replica counts. Local `hermes.env`, answers, and bootstrap metadata are not silently written into the host checkout; review them through `extract --component config|bootstrap`.
-
-### Migrating instance/namespace data with `--data-only`
-
-`restore --data-only` overlays the curated Hermes-specific paths from a `backup --data-only` archive onto an **already-installed** target — it does not wipe `/opt/data`/`workspace` first (unlike normal and `--full` restore), and it does not touch Kubernetes resources, Secrets, or `/opt/data/.env`. This makes it the right tool for moving sessions, workspace, profiles, skills, and memories into a fresh instance, a different namespace, or a newer release, while letting `install.sh` provide the runtime software (Node/npm/npx, the addon Python venv, `uv`, LSP servers) fresh:
-
-```bash
-# 1. On the source instance, stop writers and take a data-only backup.
-./maintain.sh backup ./backups/hermes-data-source.age --data-only
-
-# 2. Install the destination fresh (new namespace, new PVCs, or a newer release).
-HERMES_NAMESPACE=new-namespace ./install.sh
-
-# 3. Overlay the data-only archive onto the freshly installed destination.
-HERMES_NAMESPACE=new-namespace ./maintain.sh restore ./backups/hermes-data-source.age --data-only
-
-# 4. The destination's own API key/Browserless token are already correct
-#    (install.sh generated them); no reconcile step is needed unless you
-#    separately copied /opt/data by hand outside restore --data-only.
-./doctor.sh
-```
-
-Preview an archive's contents without extracting or scaling anything:
-
-```bash
-./maintain.sh restore ./backups/hermes-data-source.age --data-only --dry-run --password-file /secure/hermes-backup.pass
-```
-
-`--data-only` and `--full` are mutually exclusive. Because a data-only archive never carries `/opt/data/.env` or a Kubernetes Secret snapshot, `restore --data-only` skips the API-key Secret-sync step entirely — it neither reads nor writes `Secret/hermes-api-server`. If you separately copy other files onto `/opt/data` outside of `restore --data-only` (for example, restoring a data-only archive gathered by hand rather than through `backup --data-only`), converge the API key afterward with [`reconcile-api-key --source secret`](#reconcile-the-internal-api-key-after-an-external-pvc-migration).
+Protect both `hermes-home` (`/opt/data`) and `hermes-workspace` (`/workspace`),
+matching Kubernetes resources/Secrets, and private operator-side configuration
+and bootstrap inputs. Velero namespace/resource backups alone do not prove PVC
+contents were captured: choose and validate a volume-data method compatible with
+your storage class, including node-local storage. Establish application-consistent
+capture (including SQLite state), access controls, encryption, retention and
+isolated restore drills in your own runbook. This repository does not install,
+configure or validate Velero. Provider namespaces such as Authelia need separate
+coverage. After external recovery, verify ownership, credentials, application
+health and persistence before serving traffic; see the reconciliation commands below.
 
 ## Reconcile the internal API key after an external PVC migration
 
-Normal installs and `maintain.sh restore` synchronize `Secret/hermes-api-server` into persistent `/opt/data/.env`. A manual or external PVC migration can copy an older `.env` **after** that synchronization step. Hermes intentionally loads the persistent file with user configuration precedence, so the Agent may accept the migrated key while Agent, Dashboard, and WebUI Pods still receive the current Kubernetes Secret. External OIDC does not replace this internal Bearer credential.
+Normal installs synchronize `Secret/hermes-api-server` into persistent `/opt/data/.env`. A manual or external PVC migration can copy an older `.env` **after** that synchronization step. Hermes intentionally loads the persistent file with user configuration precedence, so the Agent may accept the migrated key while Agent, Dashboard, and WebUI Pods still receive the current Kubernetes Secret. External OIDC does not replace this internal Bearer credential.
 
-After copying PVC data by any path other than `maintain.sh restore`, make the Kubernetes Secret authoritative with:
+After externally restoring or copying PVC data, make the Kubernetes Secret authoritative with:
 
 ```bash
 ./maintain.sh reconcile-api-key --source secret
@@ -180,17 +64,11 @@ After copying PVC data by any path other than `maintain.sh restore`, make the Ku
 
 The explicit source is required; the command never guesses between two valid credentials and never generates a new key. It validates the Secret without printing it, atomically replaces only `API_SERVER_KEY` in `/opt/data/.env`, and preserves unrelated entries with mode `0600`. It then applies one Pod-template mutation containing both the non-secret Secret revision and a fresh non-secret reconciliation request ID to every enabled Agent API consumer. The request ID guarantees a real rollout even when the Secret revision annotation was already current. Verification accepts only Ready Pods carrying both exact annotations, probes `/health/detailed`, rechecks the authoritative Secret revision after verification, and removes the helper Pod on success or failure. If the Secret changes at any point, the command retries before rollout or fails without reporting convergence after rollout; rerun it to converge the newer revision. Expect a brief interruption while those Deployments roll out.
 
-Before a production reconciliation, create an encrypted application backup. The archive preserves both the Kubernetes Secret snapshot and the pre-change persistent `.env` without writing either credential source to a separate plaintext host file:
-
-```bash
-umask 077
-rollback_dir="./backups/api-key-reconcile-$(date -u +%Y%m%dT%H%M%SZ)"
-install -d -m 0700 "$rollback_dir"
-
-./maintain.sh backup "$rollback_dir/hermes.age"
-```
-
-Keep the passphrase outside the checkout. The encrypted archive belongs in the ignored `backups/` directory and must not be committed. The operation is idempotent: if a Deployment patch, rollout, or verification step fails after persistent `.env` was synchronized, correct the reported Kubernetes problem and rerun the same command to converge every consumer to the still-authoritative Secret. Do not rotate or edit either key as an ad-hoc recovery step. A normal restore intentionally normalizes the saved Secret into persistent `.env`; prefer rerunning `reconcile-api-key --source secret` when the goal is service recovery. If forensic reproduction of the deliberately inconsistent pre-change state is required, use `maintain.sh extract --full` only in a temporary mode-`0700` recovery directory, restore the Secret snapshot and `opt/data/.env` separately under an approved incident procedure, then securely remove the decrypted recovery directory.
+Before production reconciliation, verify an operator-owned Velero recovery point
+covering the matching Secrets and persistent data, plus privately retained installer
+configuration. The operation is idempotent: if a Deployment patch, rollout or
+verification step fails after `.env` synchronization, correct the Kubernetes issue
+and rerun the same command. Do not rotate or edit keys as an ad-hoc recovery step.
 
 ## Reconcile Browserless after an external PVC migration
 

@@ -13,10 +13,14 @@ The repository is template-driven. Deployment-specific configuration, credential
 
 The administrative workstation needs:
 
-- `git`, `kubectl`, `age`, `openssl`, `bash`, `python3`, GNU `tar`, `gzip`, and `sha256sum`
+- `git`, `kubectl`, `openssl`, `bash`, `python3`, GNU `tar`, `gzip`, and standard coreutils (including `base64`); tests also use `sha256sum`
 - a working Kubernetes context
 - permission to manage the target namespace and rendered resources
 - an Ingress controller when Dashboard or WebUI should be publicly reachable
+
+GNU `tar` and `gzip` are retained for bootstrap artifacts. Backup/recovery is
+operator-owned through Velero; the installer does not configure or test it.
+See [recovery ownership](docs/operations.md#backup-and-recovery-operator-owned-velero).
 
 ## Quick start
 
@@ -60,11 +64,11 @@ Persistence does not mean every path is immutable: installer-managed runtimes ar
 
 | Guide | Purpose |
 |---|---|
-| [`docs/operations.md`](docs/operations.md) | Installation lifecycle, maintenance, upgrades, backup/restore, credentials, bootstrap behavior, and persistent tooling |
+| [`docs/operations.md`](docs/operations.md) | Installation lifecycle, maintenance, upgrades, operator-owned Velero recovery, credentials, bootstrap behavior, and persistent tooling |
 | [`docs/persistent-software.md`](docs/persistent-software.md) | Persistent Python addons, Node/npm/npx runtime, caches, project dependencies, custom-image boundary, upgrades, and backup behavior |
 | [`docs/security.md`](docs/security.md) | Secrets, authentication, TLS, container security, Browserless/CDP controls, and backup protection |
 | [`docs/sso-integration.md`](docs/sso-integration.md) | Native SSO with standalone kube.authelia_setup, exact callbacks, supported settings, and compatibility gates |
-| [`docs/qa.md`](docs/qa.md) | Required local, render, cluster, reinstall, backup, credential, and runtime acceptance checks |
+| [`docs/qa.md`](docs/qa.md) | Required local, render, cluster, reinstall, maintenance, credential, and runtime acceptance checks |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Common deployment, PVC, ingress, WebUI, Browserless, Dashboard, and authentication failures |
 | [`docs/pvc-and-containers.md`](docs/pvc-and-containers.md) | PVC layout, container mounts, environment variables, and persistence boundaries |
 | [`docs/codex-auth.md`](docs/codex-auth.md) | OpenAI Codex OAuth pairing and persistence |

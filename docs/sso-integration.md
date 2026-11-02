@@ -147,7 +147,8 @@ by these source-checked instructions.
 - Hermes [operations](operations.md) and [security](security.md) remain authoritative
   for this stack. Provider maintenance, CA trust and recovery belong to the
   [standalone runbook](https://github.com/Tuxbull-Open-Source/kube.authelia_setup/blob/main/docs/operations.md).
-  A Hermes backup does not back up the provider's namespace, PVC or signing keys.
+  Operator-owned Velero coverage for Hermes does not automatically cover the
+  provider's separate namespace, PVC or signing keys.
 
 ## Consumer references
 

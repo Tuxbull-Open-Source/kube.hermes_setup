@@ -78,7 +78,12 @@ Terminate TLS at your Ingress controller. This template supports Ingress TLS ref
 
 ## Backups
 
-Backups include OAuth state and possibly user/session data. `maintain.sh backup` creates an `age`-encrypted archive and a SHA-256 checksum, both with mode `0600`. The encrypted metadata preserves the installer ENV, saved non-secret answers, generated bootstrap inputs, the exact K3s server version, and a normalized snapshot of repository-owned Kubernetes resources. The snapshot includes the four application Secrets required for a full rollback; their values remain encrypted and are never printed. Restore validates the archive before changing the namespace. Without `--force`, `restore --full` enforces K3s identity, exact version, and Namespace matching. `--force` overrides those compatibility/targeting gates, but never cryptographic, archive, schema, API, or apply failures.
+Backups can contain OAuth state, user/session data, private configuration and
+Kubernetes Secrets. Backup/recovery is operator-owned through Velero; this installer
+has no backup, restore or extraction commands and does not configure Velero.
+Protect storage and credentials with appropriate encryption, access controls and
+retention, and verify consistent PVC and Secret recovery in an isolated environment.
+See [backup ownership](operations.md#backup-and-recovery-operator-owned-velero).
 
 ## Password policy
 
