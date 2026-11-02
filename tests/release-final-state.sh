@@ -63,8 +63,8 @@ grep -Fq 'HERMES_AUTH_SESSION_MAX_TTL_SECONDS=43200' examples/hermes.env.example
 grep -Fq 'HERMES_AUTH_SESSION_IDLE_TTL_SECONDS=7200' examples/hermes.env.example
 grep -Fq 'value: "${HERMES_AUTH_SESSION_MAX_TTL_SECONDS}"' manifests/hermes.yaml.tpl
 grep -Fq 'HERMES_WEBUI_SESSION_TTL "$HERMES_AUTH_SESSION_MAX_TTL_SECONDS"' doctor.sh
-grep -Fq '| Hermes Dashboard OIDC ID-token contract | Not supported | 12h |' docs/authelia-freeipa-sso-overview.md
-grep -Fq 'Dashboard OIDC ID token reaches its configured 12-hour lifetime' docs/authelia-freeipa-sso-setup-guide.md
-! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/authelia-freeipa-sso-setup-guide.md
+grep -Fq 'Dashboard ID-token lifetime is provider-controlled' docs/sso-integration.md
+grep -Fq 'provider currently exposes no ID-token' docs/sso-integration.md
+! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/sso-integration.md
 
 printf 'v2.7.8 final-state contract passed\n'

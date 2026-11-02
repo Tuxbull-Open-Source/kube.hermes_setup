@@ -223,7 +223,7 @@ The operational scripts resolve configuration in this order: an explicit `ENV_FI
 
 ## Authentication mode
 
-The wizard asks for an authentication mode (`local-password` or `external-oidc`) whenever Dashboard or WebUI is enabled, and only asks the follow-up questions for the mode selected — local-password prompts (username, password) and external-oidc prompts (issuer, client IDs, public/redirect URLs, allow claim/values) never both fire. This is the same `HERMES_AUTH_MODE` value validated and consumed by `install.sh`; see [`authelia-freeipa-sso-setup-guide.md`](authelia-freeipa-sso-setup-guide.md) for the fields required in `external-oidc` mode and how to configure an external identity provider.
+The wizard asks for an authentication mode (`local-password` or `external-oidc`) whenever Dashboard or WebUI is enabled, and only asks the follow-up questions for the mode selected — local-password prompts (username, password) and external-oidc prompts (issuer, client IDs, public/redirect URLs, allow claim/values) never both fire. This is the same `HERMES_AUTH_MODE` value validated and consumed by `install.sh`; see [`sso-integration.md`](sso-integration.md) for the fields required in `external-oidc` mode and how to configure an external identity provider.
 
 ## Initial generated credentials
 
@@ -387,12 +387,13 @@ HERMES_AUTH_SESSION_MAX_TTL_SECONDS=43200
 HERMES_AUTH_SESSION_IDLE_TTL_SECONDS=7200
 ```
 
-The 12-hour maximum is injected into WebUI as
-`HERMES_WEBUI_SESSION_TTL`. For external OIDC, apply the same 12-hour value to
-Authelia's session expiration and the Dashboard client's ID-token lifespan.
-The two-hour idle value applies only to Authelia; Dashboard and WebUI currently
-use absolute/token lifetimes rather than sliding inactivity. Disable Authelia
-remember-me with `remember_me: -1`.
+The maximum is injected into WebUI as `HERMES_WEBUI_SESSION_TTL`. Neither
+variable configures the external provider or enforces Dashboard session expiry.
+Set Authelia's `session_idle` / `session_max` separately in kube.authelia_setup
+(defaults `2h` / `12h`, remember-me disabled). Dashboard ID-token lifetime is
+provider-controlled; the standalone provider currently exposes no ID-token
+lifespan setting. See [SSO integration](sso-integration.md) for the distinct
+cookie, token and application-session boundaries.
 
 After changing either value, rerun `./install.sh` and `./doctor.sh`. Because
 Authelia is externally managed, update and verify it through its own deployment

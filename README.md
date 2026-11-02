@@ -63,8 +63,7 @@ Persistence does not mean every path is immutable: installer-managed runtimes ar
 | [`docs/operations.md`](docs/operations.md) | Installation lifecycle, maintenance, upgrades, backup/restore, credentials, bootstrap behavior, and persistent tooling |
 | [`docs/persistent-software.md`](docs/persistent-software.md) | Persistent Python addons, Node/npm/npx runtime, caches, project dependencies, custom-image boundary, upgrades, and backup behavior |
 | [`docs/security.md`](docs/security.md) | Secrets, authentication, TLS, container security, Browserless/CDP controls, and backup protection |
-| [`docs/authelia-freeipa-sso-overview.md`](docs/authelia-freeipa-sso-overview.md) | Authelia + FreeIPA SSO architecture, authentication modes, maintenance, upgrades, and backup boundaries |
-| [`docs/authelia-freeipa-sso-setup-guide.md`](docs/authelia-freeipa-sso-setup-guide.md) | Step-by-step Hermes, Authelia, FreeIPA LDAP bind, OIDC, QA, and cleanup procedure |
+| [`docs/sso-integration.md`](docs/sso-integration.md) | Native SSO with standalone kube.authelia_setup, exact callbacks, supported settings, and compatibility gates |
 | [`docs/qa.md`](docs/qa.md) | Required local, render, cluster, reinstall, backup, credential, and runtime acceptance checks |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Common deployment, PVC, ingress, WebUI, Browserless, Dashboard, and authentication failures |
 | [`docs/pvc-and-containers.md`](docs/pvc-and-containers.md) | PVC layout, container mounts, environment variables, and persistence boundaries |

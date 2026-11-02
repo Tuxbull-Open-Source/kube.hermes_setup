@@ -59,11 +59,11 @@ The setup supports mutually exclusive local-password and external-OIDC applicati
 
 ### Session lifetime policy
 
-`HERMES_AUTH_SESSION_MAX_TTL_SECONDS=43200` defines the shared 12-hour
-absolute maximum. The installer enforces it directly for WebUI through
-`HERMES_WEBUI_SESSION_TTL`. In `external-oidc` mode, the separately managed
-Authelia deployment must use the same 12-hour cookie expiration and Dashboard
-OIDC ID-token lifespan.
+`HERMES_AUTH_SESSION_MAX_TTL_SECONDS=43200` sets the WebUI absolute
+maximum through `HERMES_WEBUI_SESSION_TTL`, not a universal SSO lifetime.
+The external provider cookie and Dashboard ID token have independent lifetimes.
+See [SSO integration](sso-integration.md) for provider settings and current
+claims/lifespan integration gaps.
 
 `HERMES_AUTH_SESSION_IDLE_TTL_SECONDS=7200` is the Authelia-only two-hour
 sliding inactivity policy. Dashboard and WebUI do not currently expose
