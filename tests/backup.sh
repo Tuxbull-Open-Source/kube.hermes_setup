@@ -483,6 +483,7 @@ text = Path(sys.argv[1]).read_text()
 backup_body = text.split('backup() {', 1)[1].split('\nextract_backup() {', 1)[0]
 assert 'data_only' in backup_body
 assert 'DATA_ONLY_PATHS' in backup_body
+assert 'tar --no-recursion -T - -czf /tmp/hermes-backup.tgz' in backup_body
 # Full snapshot/metadata-kubernetes staging must be skipped for data-only.
 assert 'if [[ "$data_only" != true ]]; then' in backup_body
 restore_body = text.split('\nrestore() {', 1)[1].split('\nprompt_secret() {', 1)[0]
@@ -499,6 +500,18 @@ prepare_guard = restore_body.index('if [[ "$data_only" != true ]]; then\n    pre
 sync_guard = restore_body.index('if [[ "$data_only" != true ]]; then\n    sync_restored_api_key')
 assert prepare_guard >= 0 and sync_guard >= 0
 PY
+
+# DATA_ONLY_PATHS contains directories and their descendants.  Tar must not
+# recurse again for every listed directory or it duplicates the payload and can
+# exhaust the backup volume on a live workspace.
+mkdir -p "$TMP_DIR/nonrecursive-stage/opt/data/sessions"
+printf payload > "$TMP_DIR/nonrecursive-stage/opt/data/sessions/one.txt"
+(
+  cd "$TMP_DIR/nonrecursive-stage"
+  printf '%s\n' opt opt/data opt/data/sessions opt/data/sessions/one.txt | \
+    tar --no-recursion -T - -czf "$TMP_DIR/nonrecursive.tgz"
+)
+[[ "$(tar -tzf "$TMP_DIR/nonrecursive.tgz" | grep -cx 'opt/data/sessions/one.txt')" == 1 ]]
 
 # restore --data-only --dry-run must not require kubectl at all (no cluster
 # mutation, no cluster read) and must list archive contents. The fake `age`

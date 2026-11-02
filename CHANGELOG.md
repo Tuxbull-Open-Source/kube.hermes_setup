@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [v2.7.9] - 2026-10-31
+
+### Fixed
+
+- Makes `backup --data-only` create its archive with `tar --no-recursion`.
+  The selected state paths include parent directories and descendants; allowing
+  tar to recurse for each listed parent duplicated payload data and could
+  exhaust backup storage on a large workspace.
+
+### Verification
+
+- Adds a regression fixture that feeds both a directory and its child to the
+  archive command and asserts the child is stored exactly once.
+
 ## [v2.7.8] - 2026-10-31
 
 ### Fixed

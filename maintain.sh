@@ -369,7 +369,7 @@ backup() {
   create_storage_helper_pod hermes-backup backup
   kubectl -n "$HERMES_NAMESPACE" wait --for=condition=Ready pod/hermes-backup --timeout=120s >/dev/null
   if [[ "$data_only" == true ]]; then
-    printf '%s\n' "${DATA_ONLY_PATHS[@]}" | kubectl -n "$HERMES_NAMESPACE" exec -i hermes-backup -- sh -c 'umask 077; rm -rf /tmp/hermes-backup-stage; mkdir -p /tmp/hermes-backup-stage; cd /; while IFS= read -r p; do [ -e "$p" ] || continue; mkdir -p "/tmp/hermes-backup-stage/$(dirname "$p")"; cp -a "$p" "/tmp/hermes-backup-stage/$p"; done; cd /tmp/hermes-backup-stage; find . -mindepth 1 -print | sed "s#^\./##" | tar -T - -czf /tmp/hermes-backup.tgz; chmod 600 /tmp/hermes-backup.tgz'
+    printf '%s\n' "${DATA_ONLY_PATHS[@]}" | kubectl -n "$HERMES_NAMESPACE" exec -i hermes-backup -- sh -c 'umask 077; rm -rf /tmp/hermes-backup-stage; mkdir -p /tmp/hermes-backup-stage; cd /; while IFS= read -r p; do [ -e "$p" ] || continue; mkdir -p "/tmp/hermes-backup-stage/$(dirname "$p")"; cp -a "$p" "/tmp/hermes-backup-stage/$p"; done; cd /tmp/hermes-backup-stage; find . -mindepth 1 -print | sed "s#^\./##" | tar --no-recursion -T - -czf /tmp/hermes-backup.tgz; chmod 600 /tmp/hermes-backup.tgz'
   else
     kubectl -n "$HERMES_NAMESPACE" exec hermes-backup -- sh -c 'umask 077; rm -rf /tmp/hermes-backup-stage; mkdir -p /tmp/hermes-backup-stage; cd /; find opt/data workspace -type f -exec sh -c '\''source="$1"; target="/tmp/hermes-backup-stage/$source"; mkdir -p "$(dirname "$target")"; cat "$source" > "$target"'\'' sh {} \;; cd /tmp/hermes-backup-stage; find . -type f -print | tar -T - -czf /tmp/hermes-backup.tgz; chmod 600 /tmp/hermes-backup.tgz'
   fi
