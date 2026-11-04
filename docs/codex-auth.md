@@ -49,14 +49,8 @@ Expected:
 
 ## Preserve auth across rebuilds
 
-Use `maintain.sh backup` before destructive operations:
-
-```bash
-./maintain.sh backup ./backups/hermes-$(date -u +%Y%m%dT%H%M%SZ).age
-```
-
-Restore later:
-
-```bash
-./maintain.sh restore ./backups/hermes-YYYYmmddTHHMMSSZ.age
-```
+Before destructive operations, verify that your operator-owned Velero recovery
+point includes the `hermes-home` PVC and its sensitive OAuth state. Restore through
+your approved Velero runbook, then verify authentication; pairing may still need to
+be repeated if the credential has expired or been revoked. See
+[backup ownership](operations.md#backup-and-recovery-operator-owned-velero).

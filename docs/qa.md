@@ -50,57 +50,22 @@ The full acceptance run must cover these cases on clean storage:
 
 A test that disables WebUI, Dashboard, and Browserless cannot be cited as evidence for the full or WebUI-enabled matrix.
 
-## Backup and full-rollback acceptance
-
-Changes to encrypted backups or `maintain.sh restore` require these additional QA gates, separate from the application component matrix:
-
-### Local/contract tests
+## Maintenance command contract
 
 ```bash
-./tests/backup.sh
+python3 tests/maintenance-contract.py
+./tests/api-key-sync.sh
+./tests/reconcile-api-key.sh
+./tests/browser-cdp-convergence.sh
 ```
 
-The backup contract test must cover:
+The local contract rejects removed backup/restore/extract commands without cluster
+calls or archive changes. Credential reconciliation and rotation remain supported.
+Velero recovery drills are operator-owned; this repository neither configures nor
+tests Velero. See [backup ownership](operations.md#backup-and-recovery-operator-owned-velero).
+These local checks do not replace the mandatory live gates above.
 
-- passphrase delivery through the PTY helper;
-- protected password-file permissions;
-- archive traversal/link/type rejection;
-- normalized Kubernetes snapshot metadata;
-- application Secret inclusion without printing values;
-- `restore --full --dry-run` with no Kubernetes changes;
-- refusal of K3s/version/Namespace policy mismatches without `--force`;
-- forced continuation for each of those policy mismatches;
-- refusal of malformed, undecryptable, or unappliable data even with `--force`.
-
-### Live backup and preflight
-
-On an approved isolated K3s test namespace:
-
-```bash
-backup="./backups/hermes-$(date -u +%Y%m%dT%H%M%SZ).age"
-./maintain.sh backup "$backup" --password-file /secure/hermes-backup.pass
-sha256sum -c "$backup.sha256"
-ENV_FILE=./current_config/hermes.env ./maintain.sh restore "$backup" \
-  --full --dry-run --password-file /secure/hermes-backup.pass
-```
-
-Record only redacted evidence: K3s `serverVersion.gitVersion`, snapshot resource count and kinds, archive/checksum modes, Namespace presence, and the final `No Kubernetes changes: dry-run` message. Never record Secret values or passphrases.
-
-### Full rollback apply
-
-A destructive apply requires explicit approval and an isolated Namespace. Verify before and after:
-
-- the Namespace is absent or intentionally selected;
-- the backup Namespace and `HERMES_NAMESPACE` match, or `--force` is deliberately being tested;
-- the K3s version matches, or `--force` is deliberately being tested;
-- the Namespace, PVCs, Secrets, Deployments, Services, Jobs, Ingresses, NetworkPolicies, and Middleware are recreated or reconciled;
-- PVC data is restored and ownership is correct;
-- original Deployment replica counts and rollout health are restored;
-- no unrelated Namespace is changed;
-- helper Pods and temporary plaintext files are removed.
-
-A live `--force` test must explicitly record which policy gates were overridden. `--force` is not evidence that malformed archives or failed Kubernetes applies are acceptable; those remain hard failures.
-
+## Startup failures
 
 A WebUI Pod in `CrashLoopBackOff` is a hard failure even when Agent and Dashboard are healthy. Check both current and previous logs:
 

@@ -120,7 +120,7 @@ The init Job and PVC-consuming application Pods use the configured `HERMES_RUNTI
 | `ansible/` | Ansible local temp files, SSH control sockets, and optionally installed collections/roles. | Runtime state; control sockets are ephemeral in meaning even though the directory is persistent. |
 | `home/` and `.profile` | Installer-managed login-shell environment hooks used by terminal subprocesses. | Configuration only; do not place secrets in profile files. |
 
-The exact set grows as Hermes tools and plugins create state. Backups therefore treat the complete `/opt/data` tree as application data rather than copying only the documented paths.
+The exact set grows as Hermes tools and plugins create state. Operator-managed Velero coverage should therefore account for the complete `/opt/data` tree rather than only the documented paths.
 
 ## What resides on `hermes-workspace`
 

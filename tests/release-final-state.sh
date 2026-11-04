@@ -41,12 +41,11 @@ grep -Fq 'current="$(printenv LD_LIBRARY_PATH 2>/dev/null || true)"' manifests/h
 # The production regression is part of the normal repository test tree.
 [[ -x tests/node-runtime-launcher.sh ]]
 
-# Password-file automation must never echo the passphrase through the PTY.
-grep -Fq '"--echo",' scripts/age_passphrase.py
-grep -Fq '"never",' scripts/age_passphrase.py
-grep -Fq 'age passphrase helper requires --output PATH' scripts/age_passphrase.py
-grep -Fq 'Never forward the captured' scripts/age_passphrase.py
-grep -Fq 'age command failed with exit status' scripts/age_passphrase.py
+# Retired backup-only implementation must not return.
+[[ ! -e scripts/age_passphrase.py ]]
+[[ ! -e scripts/kube_snapshot.py ]]
+[[ ! -e tests/backup.sh ]]
+python3 tests/maintenance-contract.py
 
 # v2.7.2 persistent-software architecture guide must exist and stay linked.
 [[ -f docs/persistent-software.md ]]
@@ -54,18 +53,18 @@ grep -Fq 'docs/persistent-software.md' README.md
 grep -Fq 'persistent-software.md' docs/operations.md
 grep -Fq 'persistent-software.md' docs/pvc-and-containers.md
 
-# v2.7.3 data-only backup/restore must exist and stay documented.
-grep -Fq 'DATA_ONLY_PATHS' maintain.sh
-grep -Fq -- '--data-only' maintain.sh
-grep -Fq -- '--data-only' docs/operations.md
+# Recovery ownership is external; bootstrap tar/gzip dependencies remain.
+grep -Fq 'operator-owned Velero' docs/operations.md
+grep -Fq 'require_cmd tar' install.sh
+grep -Fq 'require_cmd gzip' install.sh
 
 # v2.7.4 session policy must remain wired and described with precise semantics.
 grep -Fq 'HERMES_AUTH_SESSION_MAX_TTL_SECONDS=43200' examples/hermes.env.example
 grep -Fq 'HERMES_AUTH_SESSION_IDLE_TTL_SECONDS=7200' examples/hermes.env.example
 grep -Fq 'value: "${HERMES_AUTH_SESSION_MAX_TTL_SECONDS}"' manifests/hermes.yaml.tpl
 grep -Fq 'HERMES_WEBUI_SESSION_TTL "$HERMES_AUTH_SESSION_MAX_TTL_SECONDS"' doctor.sh
-grep -Fq '| Hermes Dashboard OIDC ID-token contract | Not supported | 12h |' docs/authelia-freeipa-sso-overview.md
-grep -Fq 'Dashboard OIDC ID token reaches its configured 12-hour lifetime' docs/authelia-freeipa-sso-setup-guide.md
-! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/authelia-freeipa-sso-setup-guide.md
+grep -Fq 'Dashboard ID-token lifetime is provider-controlled' docs/sso-integration.md
+grep -Fq 'provider currently exposes no ID-token' docs/sso-integration.md
+! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/sso-integration.md
 
 printf 'v2.7.9 final-state contract passed\n'

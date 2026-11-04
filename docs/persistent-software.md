@@ -227,7 +227,7 @@ ENV_FILE=./hermes.env ./doctor.sh
 | Addon Python version change | Managed Python is installed; an existing healthy marked venv is not automatically migrated | Unchanged | Remains |
 | Agent image changes Node/npm | Unchanged unless requirements also changed | New candidate is validated and atomically activated | npm cache remains |
 | Corrupt managed runtime | Automatic recreation checks only whether `bin/python` is executable and the `.hermes-uv-managed` marker exists; other corruption can fail later package operations and requires a controlled manual rebuild | Rebuilt from trusted Agent image; incomplete candidate never becomes current | Operator-owned data is not automatically repaired |
-| Backup/restore | Regular files are included; venv links may need reconciliation | Runtime files are included; `current` and `node_modules` links are recreated, while prior rollback history is discarded until a later runtime transition creates a new `previous` | Regular files are included; project symlinks and empty directories must be recreated |
+| External recovery | Operator verifies venv compatibility, links and modes | Operator verifies runtime files and pointers; initialization may rebuild invalid runtime state | Operator verifies project dependencies, symlinks and permissions |
 
 A backup is recovery data, not a dependency lock. After restoring onto different images, rerun `install.sh` and `doctor.sh` so managed layers are repaired or provisioned from the intended source images and requirements. Remember that Python package installation remains additive unless the addon venv is deliberately rebuilt.
 
@@ -265,25 +265,17 @@ Do not print environment files, package-registry credentials, Kubernetes Secrets
 
 ## Backup and recovery boundaries
 
-`maintain.sh backup` archives regular-file content under `/opt/data` and `/workspace` plus the normalized Kubernetes resource snapshot. It includes regular files from addon environments, managed Node generations, npm cache, skills, plugins, project dependencies, and user-local software.
-
-The storage helper copies regular-file contents through a restrictive staging area. It does not archive symbolic links, special files, empty directories, or original file modes. This matters for software layers:
-
-- `/opt/data/node/current`, `/opt/data/node/previous`, and `/opt/data/node_modules` are symlinks and are not backed up. WebUI initialization recreates `current` and `node_modules`; without a restored valid `current`, `previous` is not recreated, unreferenced generations are cleaned up, and previous rollback history is discarded until a later runtime transition creates a new `previous` link;
-- a Python virtual environment can contain interpreter or entry-point symlinks and can require a controlled rebuild by the init Job after restore;
-- installer-managed ownership and executable modes are restored only where the initialization logic explicitly repairs them;
-- project dependency trees can contain symlinks or executable files and should be reinstalled from their lock files or project setup procedure; and
-- sockets, control paths, and other process-specific artifacts are not recovery data.
-
-The encrypted backup is therefore a content snapshot and recovery input for the installer-managed rebuild process; it is not a byte-for-byte filesystem image of every software runtime. Operator-managed scripts, binaries, and projects need their own post-restore mode and dependency verification.
-
-Treat the encrypted archive as sensitive. On recovery:
-
-1. verify the backup checksum;
-2. use `restore --full --dry-run` before mutation;
-3. restore through the supported maintenance command;
-4. rerun `install.sh` to repair or provision managed software layers; and
-5. run `doctor.sh` plus capability-specific skill/tool acceptance tests.
+Backup/recovery is operator-owned through Velero; see the
+[operations boundary](operations.md#backup-and-recovery-operator-owned-velero).
+Verify that the selected volume-data method preserves required files, symlinks,
+permissions and ownership, rather than assuming a Kubernetes resource backup does.
+A recovered runtime is not necessarily compatible with a different image or Python
+version. Retain requirements/lock files, review image versions, rerun `install.sh`
+when reconstruction is required, then run `doctor.sh` and capability-specific tests.
+If the recovered Node `current` pointer is missing or invalid, initialization can
+rebuild it and previous rollback history is discarded until a later transition.
+Keep project dependency recovery and sensitive credentials under the operator's
+runbook; this installer does not implement Velero backup selection or restore.
 
 ## Decision guide
 

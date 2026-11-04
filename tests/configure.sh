@@ -51,16 +51,12 @@ rotation_inputs="$(DASHBOARD_AUTH_PASSWORD='process-password' BROWSER_TOKEN='pro
 for script in install.sh maintain.sh doctor.sh; do
   grep -Fq 'DEFAULT_ENV_FILE="$ROOT_DIR/current_config/hermes.env"' "$fallback_root/$script"
 done
-grep -Fq 'chown -R ${HERMES_RUNTIME_UID}:${HERMES_RUNTIME_GID} /opt/data /workspace' "$ROOT_DIR/maintain.sh"
 ! grep -Fq 'chown -R 1000:1000' "$ROOT_DIR/maintain.sh"
-grep -Fq 'find /opt/data /workspace -mindepth 1 -maxdepth 1 -exec rm -rf {} +' "$ROOT_DIR/maintain.sh"
 ! grep -Fq -- '--from-literal' "$ROOT_DIR/maintain.sh"
 grep -Fq 'apply_browser_secret_file() {' "$ROOT_DIR/maintain.sh"
 grep -Fq -- '--from-file="$key=$source_file"' "$ROOT_DIR/maintain.sh"
 grep -Fq 'restore_browser_secret_pair() {' "$ROOT_DIR/maintain.sh"
 grep -Fq 'apply_browser_secret_pair() {' "$ROOT_DIR/maintain.sh"
-grep -Fq 'chmod 600 "$out"' "$ROOT_DIR/maintain.sh"
-grep -Fq 'chmod 600 "$checksum"' "$ROOT_DIR/maintain.sh"
 grep -Fq 'umask 077' "$ROOT_DIR/maintain.sh"
 grep -Fq 'trap '\''rm -rf -- "$tmpdir"'\'' ERR' "$ROOT_DIR/maintain.sh"
 grep -Fq 'trap '\''rm -rf -- "$dash_tmpdir"'\'' ERR' "$ROOT_DIR/install.sh"
@@ -113,7 +109,6 @@ if PATH="$TMP_DIR/uv-policy-bin:$PATH" UV_POLICY_CALLS="$TMP_DIR/uv-policy-failu
   exit 1
 fi
 grep -Fq 'pip uninstall --python' "$TMP_DIR/uv-policy-failure.calls"
-grep -Fq 'trap backup_on_exit EXIT' "$ROOT_DIR/maintain.sh"
 grep -Fq 'show-passwords) show_passwords' "$ROOT_DIR/maintain.sh"
 ! grep -Fq 'get secret hermes-dashboard-auth -o jsonpath' "$ROOT_DIR/install.sh"
 ! grep -Fq 'get secret hermes-api-server -o jsonpath' "$ROOT_DIR/install.sh"
@@ -137,9 +132,6 @@ grep -Fq 'require_pattern' "$ROOT_DIR/scripts/render_template.py"
 ! grep -Fq 'source "$ENV_FILE"' "$ROOT_DIR/maintain.sh"
 ! grep -Fq 'source "$ENV_FILE"' "$ROOT_DIR/doctor.sh"
 
-grep -Fq 'trap restore_on_exit EXIT' "$ROOT_DIR/maintain.sh"
-grep -Fq 'original_replicas' "$ROOT_DIR/maintain.sh"
-grep -Fq 'replicas="${original_replicas[$d]}"' "$ROOT_DIR/maintain.sh"
 touch "$fallback_root/hermes.env"
 resolved_env="$(HERMES_INSTALL_LIB_ONLY=true bash -c 'source "$1/install.sh"; printf "%s" "$ENV_FILE"' _ "$fallback_root")"
 [[ "$resolved_env" == "$fallback_root/hermes.env" ]]

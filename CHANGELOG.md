@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Replaces duplicated Authelia/FreeIPA deployment manuals with a concise native
+  SSO integration guide pointing to `Tuxbull-Open-Source/kube.authelia_setup`.
+  Documents the WebUI ID-token claim compatibility gate and separate session lifetimes.
+- Moves backup/recovery responsibility to operator-managed Velero. Removes
+  `maintain.sh` backup, restore and extract commands, their options, archive helpers
+  and the `age` requirement. Existing archives, private configuration, PVCs and
+  Secrets are not deleted. GNU tar/gzip remain required for bootstrap artifacts.
+  Credential reconciliation/rotation and their shared helpers remain supported.
+
 ## [v2.7.9] - 2026-10-31
 
 ### Fixed
