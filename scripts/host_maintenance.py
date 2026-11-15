@@ -297,11 +297,17 @@ def main(argv=None):
         output({k: plan[k] for k in ['instance', 'namespace', 'phase', 'backup']})
         output({'protected_logs': str(folder), 'unit': 'hermes-maintenance-' + folder.name + '.service'}); return 0
     require(plan['phase'] == 'prepared; no workloads changed', 'Plan already launched; inspect logs, never replay')
-    guard(p, folder, plan)
     unit = 'hermes-maintenance-' + folder.name
     if a.worker:
         require(any(x.split(':', 2)[-1] == '/system.slice/' + unit + '.service' for x in Path('/proc/self/cgroup').read_text().splitlines()), 'Worker requires its independent systemd service')
-        worker(p, folder, plan); return 0
+        try:
+            worker(p, folder, plan)
+        except Exception:
+            plan['phase'] = 'failed; inspect logs and recovery metadata before retry'
+            save(folder / 'plan.json', plan)
+            raise
+        return 0
+    guard(p, folder, plan)
     for root in ['/', '/srv/backup']:
         fs = os.statvfs(root)
         require(fs.f_bavail / fs.f_blocks > .10, 'Host free space below ten percent')
