@@ -8,6 +8,31 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Explicit host instance selection happens BEFORE legacy environment defaults.
+# The checkout is never executed by a detached privileged service.
+instance=''
+if [[ "${1:-}" == --instance ]]; then
+  [[ $# -ge 3 ]] || { printf 'Usage: maintenance.sh --instance NAME COMMAND\n' >&2; exit 2; }
+  instance="$2"; shift 2
+elif [[ -f "$ROOT_DIR/.maintenance-instance" ]]; then
+  IFS= read -r instance < "$ROOT_DIR/.maintenance-instance"
+fi
+if [[ -n "$instance" ]]; then
+  [[ "$instance" =~ ^[a-z][a-z0-9-]{0,39}$ ]] || { printf 'Invalid maintenance instance\n' >&2; exit 2; }
+  case "${1:-}" in
+    status|plan|render|upgrade|logs)
+      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --instance "$instance" "$@" ;;
+    ''|-h|--help|help)
+      printf 'Usage: maintenance.sh [--instance NAME] {status|plan [--latest-stable]|render|upgrade PLAN|logs PLAN}\nSelected instance: %s\nUpgrade runs independently on the host and causes downtime; plan/render do not change cluster resources.\nRecovery remains operator-owned; use your installed recovery CLI.\n' "$instance"
+      exit 0 ;;
+    *) printf 'Selected host instance supports status, plan, render, upgrade and logs only; credential maintenance requires explicit ENV_FILE with maintain.sh and no saved instance.\n' >&2; exit 2 ;;
+  esac
+fi
+case "${1:-}" in
+  upgrade|plan|render|logs)
+    printf 'Select an explicit installed host instance: maintenance.sh --instance NAME %s\nNo rollout was started. upgrade is not a synonym for restart.\n' "$1" >&2
+    exit 2 ;;
+esac
 # Rotation input passed explicitly in the process environment must survive
 # sourcing an env file that intentionally keeps generated values blank.
 PROCESS_DASHBOARD_AUTH_USER_SET="${DASHBOARD_AUTH_USER+x}"
@@ -164,8 +189,7 @@ restart() {
 }
 
 upgrade() {
-  log "Pulling fresh images by restarting deployments. Pin image tags in hermes.env for controlled production upgrades."
-  restart
+  fail 'Select a host instance and prepared plan; upgrade never aliases restart'
 }
 
 create_storage_helper_pod() {

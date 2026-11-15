@@ -26,11 +26,17 @@ For a newer reviewed release, update the three image references in
 
 `install.sh` is re-runnable. It recreates the one-shot `hermes-init-config` Job before applying the manifest so Kubernetes Job immutability does not break upgrades/retries.
 
-For an explicitly selected image update, use:
+For host-supervised upgrades, provision an explicit instance using the
+[maintenance workflow](host-maintenance.md), then use:
 
 ```bash
-./maintain.sh upgrade
+./maintenance.sh --instance assistant plan --latest-stable
+./maintenance.sh --instance assistant upgrade assistant-PLAN_ID
 ```
+
+Use the exact plan ID returned by preparation. Bare `upgrade` no longer aliases
+`restart`; it refuses to guess an instance. The literal `maintenance.sh` spelling
+is a compatibility launcher for `maintain.sh`.
 
 ## Backup and recovery (operator-owned Velero)
 

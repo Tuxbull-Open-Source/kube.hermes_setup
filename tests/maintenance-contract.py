@@ -56,17 +56,18 @@ class MaintenanceContract(unittest.TestCase):
             self.assertIn(f"./maintain.sh {command}", result.stdout)
         self.assertFalse(self.calls.exists())
 
-    def test_status_restart_upgrade_preserve_namespace_and_enabled_set(self):
+    def test_status_restart_preserve_namespace_and_enabled_set(self):
         self.env.update(HERMES_DASHBOARD_ENABLED="false", HERMES_WEBUI_ENABLED="false",
                         HERMES_BROWSER_ENABLED="false")
-        for command in ("status", "restart", "upgrade"):
+        for command in ("status", "restart"):
             result = self.run_cli(command)
             self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_cli('upgrade')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('No rollout was started', result.stderr)
         calls = self.calls.read_text().splitlines()
         self.assertEqual(calls, [
             "-n hermes get pods,svc,ingress,networkpolicy -o wide",
-            "-n hermes rollout restart deploy/hermes-agent",
-            "-n hermes rollout status deploy/hermes-agent --timeout=600s",
             "-n hermes rollout restart deploy/hermes-agent",
             "-n hermes rollout status deploy/hermes-agent --timeout=600s",
         ])
