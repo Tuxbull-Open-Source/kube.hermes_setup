@@ -110,7 +110,12 @@ Recovery remains operator-owned Velero; this repository does not install Velero,
 change its retention, or reintroduce an archive/restore subsystem. The administrator
 selects the already reviewed root-owned Python backend implementing `ROOT`,
 `backup(namespace, folder) -> (name, metadata)`, `eligible(name, namespace)`, and
-`diagnostics(namespace, folder)`. `ROOT/operation.lock` must be the same lock used
+`diagnostics(namespace, folder)`. It must expose its kubectl and Velero argv as
+`K` and `V`, each containing one explicit `--kubeconfig PATH`; the coordinator binds
+both to the profile's protected kubeconfig. If the cluster's usual configuration
+has operator-writable parent directories, provision a reviewed root-only credential
+snapshot instead; do not loosen that directory or add executable auth plugins.
+`ROOT/operation.lock` must be the same lock used
 by its public recovery CLI. Eligibility must require a sealed, unexpired, clean
 completed cold backup with both PVC identities and completed volume records.
 Cold-backup cleanup must remove the helper and resume the saved replica map,

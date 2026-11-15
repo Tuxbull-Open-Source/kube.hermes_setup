@@ -5,6 +5,8 @@ import importlib.util
 from pathlib import Path
 import subprocess
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -42,6 +44,18 @@ class Contract(unittest.TestCase):
     def test_wrong_plan_instance(self):
         with self.assertRaises(host.Error):
             host.read_plan('other-0123456789ab', 'selected')
+
+    def test_backend_uses_protected_cluster_credentials(self):
+        backend = SimpleNamespace(K=['kubectl', '--kubeconfig', '/operator/config'],
+                                  V=['velero', '--kubeconfig', '/operator/config'])
+        profile = {'recovery_backend': '/protected/backend.py', 'kubeconfig': '/protected/config'}
+        with patch.object(host, 'module', return_value=backend), patch.object(host, 'trusted', side_effect=Path):
+            selected = host.recovery_backend(profile)
+            self.assertEqual(selected.K[-1], '/protected/config')
+            self.assertEqual(selected.V[-1], '/protected/config')
+            selected.K = ['kubectl']
+            with self.assertRaises(host.Error):
+                host.recovery_backend(profile)
 
     def test_namespace_guard(self):
         with self.assertRaises(ValueError):

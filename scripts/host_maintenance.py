@@ -232,8 +232,22 @@ def guard(p, folder, plan):
     require(contract(snapshot(p)) == contract(plan['before']), 'Live state drifted; prepare again')
 
 
-def worker(p, folder, plan):
+def recovery_backend(p):
     backend = module(p['recovery_backend'], 'recovery')
+    # Backend commands must use the same protected cluster credential snapshot.
+    # Do not inherit a kubeconfig beneath an operator-writable directory.
+    for name in ['K', 'V']:
+        argv = list(getattr(backend, name, []))
+        require(argv.count('--kubeconfig') == 1, 'Recovery backend needs an explicit kubeconfig client contract')
+        index = argv.index('--kubeconfig') + 1
+        require(index < len(argv), 'Malformed recovery backend kubeconfig argument')
+        argv[index] = str(trusted(p['kubeconfig']))
+        setattr(backend, name, argv)
+    return backend
+
+
+def worker(p, folder, plan):
+    backend = recovery_backend(p)
     # Use the SAME lock as operator backup/restore, not a second unrelated lock.
     with open(trusted(backend.ROOT) / 'operation.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -261,10 +275,14 @@ def worker(p, folder, plan):
                     require([x['image'] for x in actual['spec']['template']['spec']['containers']] == [x['image'] for x in doc['spec']['template']['spec']['containers']], 'Image verification failed')
             plan['phase'] = 'rollout-complete; application acceptance required'
             save(folder / 'plan.json', plan)
-        except Exception:
+        except Exception as exc:
             plan['phase'] = 'failed; inspect logs and recovery metadata before retry'
             save(folder / 'plan.json', plan)
-            backend.diagnostics(p['namespace'], folder)
+            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc)})
+            try:
+                backend.diagnostics(p['namespace'], folder)
+            except Exception:
+                pass  # Preserve the original failed gate even if diagnostics fail.
             raise
 
 
@@ -302,9 +320,10 @@ def main(argv=None):
         require(any(x.split(':', 2)[-1] == '/system.slice/' + unit + '.service' for x in Path('/proc/self/cgroup').read_text().splitlines()), 'Worker requires its independent systemd service')
         try:
             worker(p, folder, plan)
-        except Exception:
+        except Exception as exc:
             plan['phase'] = 'failed; inspect logs and recovery metadata before retry'
             save(folder / 'plan.json', plan)
+            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc)})
             raise
         return 0
     guard(p, folder, plan)
