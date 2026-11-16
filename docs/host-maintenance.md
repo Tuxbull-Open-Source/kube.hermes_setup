@@ -168,6 +168,21 @@ synthetic credentials and no production OIDC Secrets or ingress.
 `HERMES_ISOLATED_TEST=true` is an installer rendering option restricted to dedicated
 `hermes-test-*` (or existing recovery-backend test-prefix) namespaces. It omits
 Ingress, Middleware and vendor NetworkPolicies and sets WebUI `UV_OFFLINE=true`.
+Before any cluster mutation, a read-only preflight rejects existing Ingresses,
+Traefik Middleware/routes (both supported Traefik API groups), and NetworkPolicies
+whose names occur in the **unfiltered rendered manifest**, regardless of their
+spec. It refuses rather than deleting or pruning. Missing optional Traefik APIs
+are determined by successful discovery; permission errors, timeouts, unexpected
+responses and failed discovery/list requests stop installation. A nonexistent
+namespace may proceed to fresh creation. Do not race other writers against this
+preflight: it is not an atomic admission policy.
+
+Unrelated operator-managed policies are left unchanged; their names do not prove
+that they deny traffic. This limited managed-exposure guard is **not** a complete
+inventory of every controller/route type or proof of ingress/egress isolation:
+Kubernetes NetworkPolicies are additive, so an unrelated allow policy can defeat
+a default-deny policy. The operator must inspect all policies/routes and prove
+the actual boundary with network probes before restoring data.
 It does **not** establish or prove isolation itself. The operator must manage the
 default-deny and same-namespace-only policy independently. Prestage dependencies
 from clean credential-free images and prove offline startup before the expensive

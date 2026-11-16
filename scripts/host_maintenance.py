@@ -168,6 +168,12 @@ def protected_contract(before, docs, namespace):
             require(set(ac) == set(bc), 'Container layout changed; qualify installer separately')
             for container, target in bc.items():
                 source = ac[container]
+                # Empty command/args use image defaults; nonempty lists are ordered.
+                for key in ['command', 'args']:
+                    require((source.get(key) or []) == (target.get(key) or []), 'Container command/args changed')
+                # Empty securityContext has no settings. Do not drop any security fields:
+                # admission-injected settings must also be explicitly preserved.
+                require((source.get('securityContext') or {}) == (target.get('securityContext') or {}), 'Container securityContext changed')
                 require(source.get('resources', {}) == target.get('resources', {}), 'Protected resource settings changed')
                 def env(c):
                     # Kubernetes may omit explicit value:""; both mean empty.

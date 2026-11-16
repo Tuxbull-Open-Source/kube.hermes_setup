@@ -108,6 +108,17 @@ state drift requires a new plan. The helper imports privileged resolver/recovery
 Python code from reviewed root-owned paths; these are trusted code, not sandboxed
 plugins. See [architecture and trust boundaries](docs/host-maintenance.md).
 
+The image-upgrade guard preserves ordered `command`/`args` and the complete
+container `securityContext` for both regular and init containers. Empty/missing
+command and argument lists mean image defaults; empty/missing security contexts
+mean no settings. Explicit security fields, including admission-injected fields,
+are never discarded to force a match: reconcile and qualify changed behavior
+separately. This is a safety-critical-field guard, not a byte-for-byte Pod comparison.
+Isolated-test installs reject pre-existing Ingress/Traefik exposure and rendered
+vendor NetworkPolicy names before cluster writes; they never auto-delete them.
+Unrelated policies remain untouched and must be independently reviewed and tested
+for additive allows. See [isolation limits](docs/host-maintenance.md#proportionate-qualification-and-isolated-rehearsal).
+
 **Recovery warning:** upgrade uses a fresh eligible operator-owned Velero cold
 backup. There is no automatic rollback, data rewind, or blind retry after failure.
 An image downgrade alone does not undo data migrations. Inspect protected evidence

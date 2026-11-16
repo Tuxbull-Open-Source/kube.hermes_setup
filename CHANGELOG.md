@@ -28,6 +28,17 @@ release convention. Application image defaults are not changed by this version b
 - Adds isolated-test rendering for explicitly selected test namespaces. Isolation
   must still be established and proved independently before restoring data.
 
+### Fixed
+
+- Rejects regular/init container command, ordered argument and complete security
+  context drift during image-upgrade planning, without ignoring explicit security
+  settings or confusing empty execution lists with an empty-string argument.
+- Isolated-mode preflight now refuses existing Ingress/Traefik exposure and vendor
+  NetworkPolicy names derived from the unfiltered render before any cluster write.
+  It never auto-prunes; unrelated operator policies remain unchanged. Discovery,
+  permissions, malformed responses and timeouts fail closed. This limited guard
+  does not prove network isolation or neutralize unrelated additive allow policies.
+
 ### Upgrade and recovery notes
 
 - Existing 2.7.8/2.7.9 users should follow the [README migration workflow](README.md#existing-installations-maintenance-and-upgrade)

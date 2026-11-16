@@ -688,14 +688,14 @@ render_manifest() {
   if [[ "${HERMES_ISOLATED_TEST:-false}" == true ]]; then
     # The operator must establish and prove default-deny before restoring data.
     # Do not apply vendor ingress/policies over that independently managed boundary.
-    python3 "$ROOT_DIR/scripts/isolated_manifest.py" "$MANIFEST_OUT"
+    python3 "$ROOT_DIR/scripts/isolated_manifest.py" "$MANIFEST_OUT" "${1:-render}"
   fi
 }
 
 preflight_manifest() {
   (
     export API_SERVER_KEY_REVISION=preflight-resource-version
-    render_manifest
+    render_manifest preflight
   )
 }
 
