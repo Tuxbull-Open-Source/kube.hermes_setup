@@ -1,5 +1,10 @@
 # Operations guide
 
+For the 2.8.0 candidate, start with the [existing-installation migration](../README.md#existing-installations-maintenance-and-upgrade)
+and [release notes](../CHANGELOG.md#v280---unreleased). The legacy commands below
+require the intended configuration. For enrolled checkouts,
+use `maintenance.sh status` and the host workflow instead.
+
 ## Status
 
 ```bash
@@ -26,11 +31,17 @@ For a newer reviewed release, update the three image references in
 
 `install.sh` is re-runnable. It recreates the one-shot `hermes-init-config` Job before applying the manifest so Kubernetes Job immutability does not break upgrades/retries.
 
-For an explicitly selected image update, use:
+For host-supervised upgrades, provision the checkout binding using the
+[maintenance workflow](host-maintenance.md), then use:
 
 ```bash
-./maintain.sh upgrade
+./maintenance.sh plan --latest-stable
+./maintenance.sh upgrade PLAN_ID
 ```
+
+Use the exact plan ID returned by preparation. Bare `upgrade` no longer aliases
+`restart`; it refuses to guess an instance. The literal `maintenance.sh` spelling
+is a compatibility launcher for `maintain.sh`.
 
 ## Backup and recovery (operator-owned Velero)
 

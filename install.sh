@@ -685,12 +685,17 @@ render_manifest() {
   python3 "$ROOT_DIR/scripts/render_template.py" \
     "$ROOT_DIR/manifests/hermes.yaml.tpl" \
     "$MANIFEST_OUT"
+  if [[ "${HERMES_ISOLATED_TEST:-false}" == true ]]; then
+    # The operator must establish and prove default-deny before restoring data.
+    # Do not apply vendor ingress/policies over that independently managed boundary.
+    python3 "$ROOT_DIR/scripts/isolated_manifest.py" "$MANIFEST_OUT" "${1:-render}"
+  fi
 }
 
 preflight_manifest() {
   (
     export API_SERVER_KEY_REVISION=preflight-resource-version
-    render_manifest
+    render_manifest preflight
   )
 }
 

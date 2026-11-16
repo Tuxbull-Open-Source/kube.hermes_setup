@@ -569,7 +569,7 @@ done
 [[ "$HERMES_AUTH_SESSION_IDLE_TTL_SECONDS" =~ ^[0-9]{1,8}$ ]] || { printf 'ERROR: auth session idle TTL must be 1 to 8 decimal digits.\n' >&2; exit 1; }
 (( 10#$HERMES_AUTH_SESSION_MAX_TTL_SECONDS >= 60 && 10#$HERMES_AUTH_SESSION_MAX_TTL_SECONDS <= 31536000 )) || { printf 'ERROR: auth session maximum TTL must be between 60 and 31536000 seconds.\n' >&2; exit 1; }
 (( 10#$HERMES_AUTH_SESSION_IDLE_TTL_SECONDS >= 60 && 10#$HERMES_AUTH_SESSION_IDLE_TTL_SECONDS <= 10#$HERMES_AUTH_SESSION_MAX_TTL_SECONDS )) || { printf 'ERROR: auth session idle TTL must be at least 60 seconds and no greater than the maximum TTL.\n' >&2; exit 1; }
-[[ "$HERMES_BOOTSTRAP_MODE" == missing || "$HERMES_BOOTSTRAP_MODE" == overwrite ]] || { printf 'ERROR: invalid bootstrap mode in answers.\n' >&2; exit 1; }
+[[ "$HERMES_BOOTSTRAP_MODE" == missing || "$HERMES_BOOTSTRAP_MODE" == overwrite || "$HERMES_BOOTSTRAP_MODE" == disabled ]] || { printf 'ERROR: invalid bootstrap mode in answers.\n' >&2; exit 1; }
 if [[ "$HERMES_ANSIBLE_SETUP" == true ]]; then
   [[ "$HERMES_ANSIBLE_VERSION" =~ ^[0-9]+([.][0-9]+){1,2}$ ]] || { printf 'ERROR: invalid Ansible version in answers.\n' >&2; exit 1; }
   HERMES_SSH_SETUP=true

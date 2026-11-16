@@ -8,6 +8,20 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# One checkout owns one configured namespace. Never select a second target.
+case "${1:-}" in
+  --instance) printf 'Instance selection is not supported; use this checkout configuration.\n' >&2; exit 2 ;;
+  upgrade|plan|render|logs)
+    [[ "${1:-}" != upgrade || $# -eq 2 ]] || { printf 'Usage: maintenance.sh upgrade PLAN\nNo rollout was started.\n' >&2; exit 2; }
+    [[ -x /usr/local/libexec/hermes-maintenance.py ]] || { printf 'Host helper not provisioned for this checkout. No rollout was started.\n' >&2; exit 2; }
+    [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
+    exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@" ;;
+  status)
+    if [[ -x /usr/local/libexec/hermes-maintenance.py ]]; then
+      [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
+      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@"
+    fi ;;
+esac
 # Rotation input passed explicitly in the process environment must survive
 # sourcing an env file that intentionally keeps generated values blank.
 PROCESS_DASHBOARD_AUTH_USER_SET="${DASHBOARD_AUTH_USER+x}"
@@ -111,7 +125,10 @@ usage() {
 Usage:
   ./maintain.sh status
   ./maintain.sh restart
-  ./maintain.sh upgrade
+  ./maintain.sh plan [--latest-stable]
+  ./maintain.sh render [--latest-stable]
+  ./maintain.sh upgrade PLAN
+  ./maintain.sh logs PLAN
   ./maintain.sh reconcile-api-key --source secret
   ./maintain.sh reconcile-browser-token --source secret
   ./maintain.sh show-passwords
@@ -164,8 +181,7 @@ restart() {
 }
 
 upgrade() {
-  log "Pulling fresh images by restarting deployments. Pin image tags in hermes.env for controlled production upgrades."
-  restart
+  fail 'Provision this checkout and prepare a plan; upgrade never aliases restart'
 }
 
 create_storage_helper_pod() {
