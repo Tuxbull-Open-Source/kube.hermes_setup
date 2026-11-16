@@ -1,5 +1,10 @@
 # Operations guide
 
+For the 2.8.0 candidate, start with the [existing-installation migration](../README.md#existing-installations-maintenance-and-upgrade)
+and [release notes](../CHANGELOG.md#v280---unreleased). The legacy commands below
+require the intended `ENV_FILE` and no saved host instance. For enrolled instances,
+use `maintenance.sh --instance NAME status` and the host workflow instead.
+
 ## Status
 
 ```bash

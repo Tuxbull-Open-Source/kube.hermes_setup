@@ -1,6 +1,9 @@
 # Host-supervised maintenance
 
-`maintenance.sh` is the stable spelling of `maintain.sh`, not a second implementation.
+The 2.8.0 candidate adds this workflow; see the [release notes](../CHANGELOG.md#v280---unreleased)
+and [2.7.8/2.7.9 migration steps](../README.md#existing-installations-maintenance-and-upgrade).
+It is under PR review, not a published release. `maintain.sh` remains canonical;
+`maintenance.sh` is its compatibility launcher, not a second implementation.
 The old `upgrade` command merely restarted existing images; it did not update the
 installer or image pins. It now fails closed without an explicitly selected host
 instance and prepared plan. `restart` remains a separate legacy operation.
@@ -8,6 +11,7 @@ instance and prepared plan. `restart` remains a separate legacy operation.
 ## Operator interface
 
 ```bash
+./maintenance.sh --instance assistant --help
 ./maintenance.sh --instance assistant status
 ./maintenance.sh --instance assistant plan --latest-stable
 ./maintenance.sh --instance assistant logs assistant-PLAN_ID
@@ -18,7 +22,13 @@ instance and prepared plan. `restart` remains a separate legacy operation.
 Use the exact plan ID printed by `plan`, not the example above. `render` is an
 alias for preparation without cluster writes. Both commands create protected host
 artifacts; they are not filesystem-read-only. `status` and `logs` are read-only.
-No arguments display help. To save only an instance name in an operator checkout:
+With a saved instance, no command displays host-mode help; explicit selection
+requires a command, such as `--instance assistant --help`. Without an instance,
+help displays legacy operations (its bare `upgrade` example refuses to act).
+Host mode supports only `status`, `plan [--latest-stable]`,
+`render [--latest-stable]`, `upgrade PLAN`, and `logs PLAN`; there are no
+`--execute`, `--dry-run`, `--force`, or automatic-rollback flags.
+To save only an instance name in an operator checkout:
 
 ```bash
 (umask 077; printf '%s\n' assistant > .maintenance-instance)
@@ -42,7 +52,12 @@ Do not automatically pull, reset, or switch a user's dirty working tree.
 
 Export the reviewed commit using `git archive COMMIT`, inspect the archive, and
 install it under a new root-owned `/usr/local/lib/hermes-maintenance/COMMIT/`.
-All parents and files must be root-owned and not group/other writable; reject
+The helper dynamically imports the source snapshot's `scripts/stable_images.py`
+and the configured recovery backend as privileged Python code. They are trusted
+administrator-reviewed code, not sandboxed plugins; ownership checks are not a
+code audit. The separately installed helper itself must also be reviewed and kept
+consistent with that source revision. All parents and files must be root-owned
+and not group/other writable; reject
 symlinks. Install `scripts/host_maintenance.py` as a regular root-owned executable
 `/usr/local/libexec/hermes-maintenance.py`. Required host tools: Python 3 with
 PyYAML, Bash, kubectl, systemd, and the existing operator recovery backend.

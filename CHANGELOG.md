@@ -4,6 +4,59 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [v2.8.0] - Unreleased
+
+Release candidate in [PR #127](https://github.com/Tuxbull-Open-Source/kube.hermes_setup/pull/127),
+not a published tag/release. `VERSION` advances from 2.7.9 to 2.8.0 for the new
+host-supervised maintenance feature, following this repository's minor-feature
+release convention. Application image defaults are not changed by this version bump.
+
+### Added
+
+- Adds `maintenance.sh` as a compatibility launcher for canonical `maintain.sh`.
+  Explicit `--instance NAME` or a saved `.maintenance-instance` selects a protected
+  host profile before unrelated wizard defaults can select the wrong namespace.
+- Adds `status`, `plan`/`render`, `upgrade PLAN`, and `logs PLAN` for enrolled host
+  instances. Stable publisher metadata and verified registry digests are frozen in
+  sealed plans; source, namespace/PVC, authentication and resource drift fail closed.
+- Runs upgrades independently in a host systemd service using reviewed root-owned
+  source, existing sudo rights and an imported operator-owned Velero backend.
+  Both recovery clients bind to the profile's protected kubeconfig; cold-backup,
+  original replica metadata, durable phase/log handles and failure evidence survive
+  loss of the initiating Agent session. No sudoers changes or new backup framework.
+- Adds isolated-test rendering for explicitly selected test namespaces. Isolation
+  must still be established and proved independently before restoring data.
+
+### Upgrade and recovery notes
+
+- Existing 2.7.8/2.7.9 users should follow the [README migration workflow](README.md#existing-installations-maintenance-and-upgrade)
+  and [administrator enrollment guide](docs/host-maintenance.md). Merely fetching
+  this PR or changing `VERSION` neither installs the helper nor upgrades workloads.
+- `upgrade` no longer means restart; without a selected instance and prepared plan
+  it refuses to act. Use the separate legacy `restart` deliberately when needed.
+- Cold backup and rollout cause downtime. A successful service launch is not
+  completed application acceptance. Failures do not automatically rewind data or
+  retry installation; an image downgrade is not a database rollback. Recovery is
+  operator-authorized, selects an exact backup and may discard subsequent writes.
+
+### Verification and limitations
+
+- PR #127 records real two-PVC cloned-namespace acceptance of executable revision
+  `2dd84e432962cca325c45b8510adebd4411cc52a` through the non-root operator's
+  `maintenance.sh`: Agent 0.22.5 -> 0.23.1, WebUI 0.52.667 -> 0.52.678, and
+  Browserless 2.58.1 -> 2.63.1. Cold backup, rollout, identity/Secret preservation,
+  valid/invalid authentication, real Chromium UI, API/CDP and logical-data checks
+  passed; isolated fixtures were removed and recovery evidence retained.
+- That is targeted upgrade acceptance, not a fresh-VM/profile matrix, production
+  OIDC login, production cutover, full production restore CLI test or external-model
+  test. Documentation/version follow-up checks are recorded separately in the PR;
+  no new production upgrade or clone rehearsal is implied.
+- WebUI 0.52.679 was prepared only, not runtime-qualified. Stable resolution does
+  not certify compatibility. Node 26.12.1 remains image-managed; the known gap to
+  newer 26.13.1 is not fixed by this feature. No all-current or vulnerability-free
+  claim is made. GitHub had no automated check runs/status contexts for the tested
+  revision; local and live tool-executed evidence is not a CI pass.
+
 ### Changed
 
 - Replaces duplicated Authelia/FreeIPA deployment manuals with a concise native
