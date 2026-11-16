@@ -1,5 +1,4 @@
 # local configuration / secrets
-/.maintenance-instance
 /bootstrap/
 /current_config/
 /configuration_answers

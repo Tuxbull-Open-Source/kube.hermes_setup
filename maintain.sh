@@ -8,30 +8,19 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Explicit host instance selection happens BEFORE legacy environment defaults.
-# The checkout is never executed by a detached privileged service.
-instance=''
-if [[ "${1:-}" == --instance ]]; then
-  [[ $# -ge 3 ]] || { printf 'Usage: maintenance.sh --instance NAME COMMAND\n' >&2; exit 2; }
-  instance="$2"; shift 2
-elif [[ -f "$ROOT_DIR/.maintenance-instance" ]]; then
-  IFS= read -r instance < "$ROOT_DIR/.maintenance-instance"
-fi
-if [[ -n "$instance" ]]; then
-  [[ "$instance" =~ ^[a-z][a-z0-9-]{0,39}$ ]] || { printf 'Invalid maintenance instance\n' >&2; exit 2; }
-  case "${1:-}" in
-    status|plan|render|upgrade|logs)
-      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --instance "$instance" "$@" ;;
-    ''|-h|--help|help)
-      printf 'Usage: maintenance.sh [--instance NAME] {status|plan [--latest-stable]|render|upgrade PLAN|logs PLAN}\nSelected instance: %s\nUpgrade runs independently on the host and causes downtime; plan/render do not change cluster resources.\nRecovery remains operator-owned; use your installed recovery CLI.\n' "$instance"
-      exit 0 ;;
-    *) printf 'Selected host instance supports status, plan, render, upgrade and logs only; credential maintenance requires explicit ENV_FILE with maintain.sh and no saved instance.\n' >&2; exit 2 ;;
-  esac
-fi
+# One checkout owns one configured namespace. Never select a second target.
 case "${1:-}" in
+  --instance) printf 'Instance selection is not supported; use this checkout configuration.\n' >&2; exit 2 ;;
   upgrade|plan|render|logs)
-    printf 'Select an explicit installed host instance: maintenance.sh --instance NAME %s\nNo rollout was started. upgrade is not a synonym for restart.\n' "$1" >&2
-    exit 2 ;;
+    [[ "${1:-}" != upgrade || $# -eq 2 ]] || { printf 'Usage: maintenance.sh upgrade PLAN\nNo rollout was started.\n' >&2; exit 2; }
+    [[ -x /usr/local/libexec/hermes-maintenance.py ]] || { printf 'Host helper not provisioned for this checkout. No rollout was started.\n' >&2; exit 2; }
+    [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
+    exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@" ;;
+  status)
+    if [[ -x /usr/local/libexec/hermes-maintenance.py ]]; then
+      [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
+      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@"
+    fi ;;
 esac
 # Rotation input passed explicitly in the process environment must survive
 # sourcing an env file that intentionally keeps generated values blank.
@@ -136,7 +125,10 @@ usage() {
 Usage:
   ./maintain.sh status
   ./maintain.sh restart
-  ./maintain.sh upgrade
+  ./maintain.sh plan [--latest-stable]
+  ./maintain.sh render [--latest-stable]
+  ./maintain.sh upgrade PLAN
+  ./maintain.sh logs PLAN
   ./maintain.sh reconcile-api-key --source secret
   ./maintain.sh reconcile-browser-token --source secret
   ./maintain.sh show-passwords
@@ -189,7 +181,7 @@ restart() {
 }
 
 upgrade() {
-  fail 'Select a host instance and prepared plan; upgrade never aliases restart'
+  fail 'Provision this checkout and prepare a plan; upgrade never aliases restart'
 }
 
 create_storage_helper_pod() {

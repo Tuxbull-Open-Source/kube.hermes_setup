@@ -102,13 +102,33 @@ def tree_hash(root):
     return result
 
 
-def profile(name):
-    require(bool(re.fullmatch('[a-z][a-z0-9-]{0,39}', name)), 'Invalid instance name')
-    p = json.loads(trusted(CONFIG / (name + '.json')).read_text())
+def source_config(checkout):
+    """Read data only: never execute the operator-writable environment file."""
+    checkout = Path(checkout)
+    require(checkout.is_absolute() and checkout.resolve() == checkout, 'Canonical checkout path required')
+    candidates = [checkout / 'hermes.env', checkout / 'current_config/hermes.env']
+    present = [path for path in candidates if path.is_file()]
+    require(len(present) == 1, 'Require exactly one checkout hermes.env (root or current_config); missing or ambiguous configuration')
+    path = present[0]
+    require(not path.is_symlink() and path.resolve().is_relative_to(checkout), 'Configuration must belong to this checkout')
+    values = envfile(path)
+    require(bool(re.fullmatch('[a-z0-9][a-z0-9-]{0,62}', values.get('HERMES_NAMESPACE', ''))), 'Explicit configured namespace required; no default or discovery')
+    require(values.get('HERMES_AUTH_MODE') in ['local-password', 'external-oidc'], 'Explicit configured auth mode required')
+    return path, values
+
+
+def binding_id(checkout):
+    return 'checkout-' + hashlib.sha256(str(checkout).encode()).hexdigest()[:24]
+
+
+def profile(checkout):
+    path, values = source_config(checkout)
+    p = json.loads(trusted(CONFIG / (binding_id(checkout) + '.json')).read_text())
+    require(p['checkout'] == str(checkout) and p['config_path'] == str(path), 'Protected binding belongs to another checkout/configuration')
     for key in ['source', 'env_file', 'recovery_backend', 'kubeconfig']:
         trusted(p[key])
-    require(envfile(p['env_file']).get('HERMES_NAMESPACE') == p['namespace'], 'Explicit namespace mismatch')
-    require(envfile(p['env_file']).get('HERMES_AUTH_MODE') in ['local-password', 'external-oidc'], 'Explicit auth mode required')
+    require(values.get('HERMES_NAMESPACE') == p['namespace'], 'Configured namespace differs from protected target; correct source configuration, never discover another namespace')
+    require(values == envfile(p['env_file']), 'Checkout configuration differs from reviewed protected snapshot; reconcile and review before maintenance')
     return p
 
 
@@ -118,9 +138,11 @@ def kube(p, *args):
 
 def snapshot(p):
     ns = p['namespace']
+    cluster_uid = kube(p, 'get', 'namespace', 'kube-system')['metadata']['uid']
+    require(cluster_uid == p['cluster_uid'], 'Cluster identity mismatch')
     namespace = kube(p, 'get', 'namespace', ns)['metadata']['uid']
     pvcs = kube(p, '-n', ns, 'get', 'pvc')['items']
-    require(namespace == p['namespace_uid'], 'Namespace UID differs from selected instance')
+    require(namespace == p['namespace_uid'], 'Namespace UID differs from configured checkout')
     require({x['metadata']['name']: x['metadata']['uid'] for x in pvcs} == p['pvc_uids'], 'PVC identity mismatch')
     require(all(x.get('status', {}).get('phase') == 'Bound' for x in pvcs), 'Unbound PVC')
     secrets = {}
@@ -204,6 +226,7 @@ def prepare(p, name, latest):
     manifest = folder / 'rendered/hermes.yaml'
     plan = {'instance': name, 'namespace': p['namespace'], 'source_revision': p['source_revision'],
             'profile': p, 'before': before, 'source_hashes': tree_hash(p['source']),
+            'config_sha256': hashlib.sha256(Path(p['config_path']).read_bytes()).hexdigest(),
             'env_sha256': hashlib.sha256((folder / 'candidate.env').read_bytes()).hexdigest(),
             'manifest_sha256': hashlib.sha256(manifest.read_bytes()).hexdigest(), 'publisher_releases': targets,
             'images': {k: v for k, v in values.items() if k.endswith('_IMAGE')},
@@ -221,7 +244,9 @@ def read_plan(name, instance):
 
 
 def guard(p, folder, plan):
-    require(p == plan['profile'], 'Instance profile changed; prepare again')
+    require(profile(p['checkout']) == p, 'Source configuration changed; prepare again')
+    require(p == plan['profile'], 'Protected binding changed; prepare again')
+    require(hashlib.sha256(Path(p['config_path']).read_bytes()).hexdigest() == plan['config_sha256'], 'Source configuration changed after plan')
     require(tree_hash(p['source']) == plan['source_hashes'], 'Reviewed source changed')
     require(hashlib.sha256((folder / 'candidate.env').read_bytes()).hexdigest() == plan['env_sha256'], 'Candidate changed')
     require(hashlib.sha256((folder / 'rendered/hermes.yaml').read_bytes()).hexdigest() == plan['manifest_sha256'], 'Manifest changed')
@@ -288,29 +313,30 @@ def worker(p, folder, plan):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Independent host maintenance. Read-only cluster: status, plan/render. Upgrade causes downtime and a cold Velero backup, then runs the reviewed installer. Existing sudo rights required. No automatic rollback. Exit 0 success, 1 failed gate, 2 usage. Logs/configuration remain root-only.')
-    parser.add_argument('--instance', required=True)
+    parser.add_argument('--checkout', required=True, help=argparse.SUPPRESS)
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('status', help='Read-only resource status; not an application probe')
     for name in ['plan', 'render']:
-        q = sub.add_parser(name, help='Render selected instance to protected host files; no cluster writes')
+        q = sub.add_parser(name, help='Render configured checkout to protected host files; no cluster writes')
         q.add_argument('--latest-stable', action='store_true', help='Resolve stable publisher releases and registry digests now; never float at execution')
     for name in ['upgrade', 'logs']:
         q = sub.add_parser(name, help='Launch prepared plan with downtime' if name == 'upgrade' else 'Read concise durable plan state and log locations')
         q.add_argument('plan')
     a = parser.parse_args(argv)
-    require(os.geteuid() == 0, 'Use maintenance.sh --instance NAME through the installed sudo helper')
+    require(os.geteuid() == 0, 'Use maintenance.sh through the installed sudo helper')
     os.umask(0o077)
-    p = profile(a.instance)
+    p = profile(a.checkout)
+    name = binding_id(a.checkout)
     if a.command == 'status':
         state = snapshot(p)
         deployments = [{'name': x['metadata']['name'], 'desired': x['spec'].get('replicas', 1), 'available': x.get('status', {}).get('availableReplicas', 0)} for x in state['deployments']]
         healthy = bool(deployments) and all(x['desired'] > 0 and x['available'] == x['desired'] for x in deployments)
-        output({'instance': a.instance, 'namespace': p['namespace'], 'deployments': deployments, 'resource_health': healthy, 'application_probe': 'not performed', 'source_revision': p['source_revision']})
+        output({'instance': name, 'namespace': p['namespace'], 'deployments': deployments, 'resource_health': healthy, 'application_probe': 'not performed', 'source_revision': p['source_revision']})
         return 0 if healthy else 1
     if a.command in ['plan', 'render']:
-        prepare(p, a.instance, a.latest_stable); return 0
-    folder, plan = read_plan(a.plan, a.instance)
+        prepare(p, name, a.latest_stable); return 0
+    folder, plan = read_plan(a.plan, name)
     if a.command == 'logs':
         output({k: plan[k] for k in ['instance', 'namespace', 'phase', 'backup']})
         output({'protected_logs': str(folder), 'unit': 'hermes-maintenance-' + folder.name + '.service'}); return 0
@@ -330,8 +356,8 @@ def main(argv=None):
     for root in ['/', '/srv/backup']:
         fs = os.statvfs(root)
         require(fs.f_bavail / fs.f_blocks > .10, 'Host free space below ten percent')
-    run(['systemd-run', '--unit=' + unit, '--property=Type=exec', '--property=UMask=0077', '--property=StandardOutput=null', '--property=StandardError=null', SELF, '--instance', a.instance, '--worker', 'upgrade', a.plan])
-    output({'state': 'started, not completed', 'unit': unit + '.service', 'next': 'maintenance.sh --instance ' + a.instance + ' logs ' + a.plan})
+    run(['systemd-run', '--unit=' + unit, '--property=Type=exec', '--property=UMask=0077', '--property=StandardOutput=null', '--property=StandardError=null', SELF, '--checkout', a.checkout, '--worker', 'upgrade', a.plan])
+    output({'state': 'started, not completed', 'unit': unit + '.service', 'next': 'maintenance.sh logs ' + a.plan})
     return 0
 
 

@@ -2,8 +2,8 @@
 
 For the 2.8.0 candidate, start with the [existing-installation migration](../README.md#existing-installations-maintenance-and-upgrade)
 and [release notes](../CHANGELOG.md#v280---unreleased). The legacy commands below
-require the intended `ENV_FILE` and no saved host instance. For enrolled instances,
-use `maintenance.sh --instance NAME status` and the host workflow instead.
+require the intended configuration. For enrolled checkouts,
+use `maintenance.sh status` and the host workflow instead.
 
 ## Status
 
@@ -31,12 +31,12 @@ For a newer reviewed release, update the three image references in
 
 `install.sh` is re-runnable. It recreates the one-shot `hermes-init-config` Job before applying the manifest so Kubernetes Job immutability does not break upgrades/retries.
 
-For host-supervised upgrades, provision an explicit instance using the
+For host-supervised upgrades, provision the checkout binding using the
 [maintenance workflow](host-maintenance.md), then use:
 
 ```bash
-./maintenance.sh --instance assistant plan --latest-stable
-./maintenance.sh --instance assistant upgrade assistant-PLAN_ID
+./maintenance.sh plan --latest-stable
+./maintenance.sh upgrade PLAN_ID
 ```
 
 Use the exact plan ID returned by preparation. Bare `upgrade` no longer aliases

@@ -1,6 +1,10 @@
 # kube.hermes_setup
 
-Production-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/nousresearch/hermes-agent) stack:
+> [!WARNING]
+> **Proof of concept — lab and agent experimentation only. Never use in production environments.**
+> This project is intended for rapid deployment and evaluation of setups, not as a turnkey production platform. Upgrading an existing, customized Hermes Agent installation can require substantial experience with Kubernetes and Hermes Agent. Do not use this project unless you are willing to learn how the underlying system works.
+
+Lab-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/nousresearch/hermes-agent) stack:
 
 - **Hermes Agent** — mandatory API/gateway runtime
 - **Hermes Dashboard** — optional administrative dashboard
@@ -59,7 +63,7 @@ git clone --branch feat/explicit-maintenance-upgrade --single-branch \
   https://github.com/Tuxbull-Open-Source/kube.hermes_setup.git kube.hermes_setup-review
 cd kube.hermes_setup-review
 git log -1 --oneline
-./maintenance.sh --instance assistant --help
+./maintenance.sh --help
 ```
 
 Review the exact PR head before provisioning it. This only obtains source and
@@ -68,19 +72,19 @@ merge/release, use the maintainer-approved revision instead of assuming this
 review branch is a published tag.
 
 An administrator must first provision the [root-owned helper, source snapshot,
-instance profile and existing recovery backend](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
+checkout binding and existing recovery backend](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
 Then run as the ordinary operator with existing sudo rights, on that host:
 
 ```bash
-./maintenance.sh --instance assistant status
-./maintenance.sh --instance assistant plan --latest-stable
+./maintenance.sh status
+./maintenance.sh plan --latest-stable
 # Review exact image digests, source revision and compatibility before continuing.
-# Replace PLAN_ID with the full instance-prefixed ID returned above.
-./maintenance.sh --instance assistant logs PLAN_ID
+# Replace PLAN_ID with the full checkout-bound ID returned above.
+./maintenance.sh logs PLAN_ID
 # Explicit maintenance window: cold backup and rollout cause downtime.
-./maintenance.sh --instance assistant upgrade PLAN_ID
-./maintenance.sh --instance assistant logs PLAN_ID
-./maintenance.sh --instance assistant status
+./maintenance.sh upgrade PLAN_ID
+./maintenance.sh logs PLAN_ID
+./maintenance.sh status
 ```
 
 `status` reports resource availability, not application acceptance. `logs` reports
@@ -88,16 +92,13 @@ durable phase, backup, systemd unit and protected log location; it is not a log-
 command. The host service survives loss of the terminal or Agent session, **not**
 loss of the host. A launch result means started, not completed.
 
-Use `--instance NAME` before the command on multi-instance hosts. Alternatively,
-save just one name in the Git-ignored `.maintenance-instance` file as described in
-the [operator interface](docs/host-maintenance.md#operator-interface); an explicit
-name overrides it. The host profile binds namespace/PVC identities, authentication,
-configuration, protected kubeconfig and reviewed source; it bypasses unrelated
-wizard defaults. Do not let a default `hermes` namespace select another instance.
-Legacy status/restart/credential commands without a saved host instance still use
-`ENV_FILE`, then root `hermes.env`, then `current_config/hermes.env`; select the
-correct configuration explicitly. No new sudoers rule or permission workaround
-is part of this workflow.
+One checkout manages exactly one namespace from its existing `hermes.env` or
+`current_config/hermes.env`. Host maintenance rejects missing or ambiguous files
+and any mismatch with the protected snapshot. It never discovers another namespace
+or bypasses an incorrect `hermes` default. Correct the existing configuration after
+review; do not introduce a selector or alternate maintenance profile. The internal
+root-owned binding seals namespace/PVC identities, authentication, configuration,
+protected kubeconfig and reviewed source. No new sudoers rule is needed.
 
 `plan` (or `render`) creates protected host artifacts without cluster writes.
 `--latest-stable` resolves publisher releases and registry digests **at preparation**;
@@ -167,8 +168,8 @@ Additional references:
 |---|---|
 | `./configure.sh` | Create or intentionally regenerate local configuration |
 | `./install.sh` | Validate, render, apply, and verify the stack |
-| `./maintain.sh` | Canonical maintenance implementation; explicit host-instance upgrades or legacy ENV_FILE operations |
-| `./maintenance.sh --instance NAME --help` | Compatibility launcher: host status, plan/render, upgrade PLAN, logs PLAN |
+| `./maintain.sh` | Canonical maintenance implementation; checkout-bound upgrades or legacy ENV_FILE operations |
+| `./maintenance.sh --help` | Compatibility launcher: host status, plan/render, upgrade PLAN, logs PLAN |
 | `./doctor.sh` | Run deployment diagnostics |
 
 ## Acknowledgements

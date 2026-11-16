@@ -14,14 +14,14 @@ release convention. Application image defaults are not changed by this version b
 ### Added
 
 - Adds `maintenance.sh` as a compatibility launcher for canonical `maintain.sh`.
-  Explicit `--instance NAME` or a saved `.maintenance-instance` selects a protected
-  host profile before unrelated wizard defaults can select the wrong namespace.
-- Adds `status`, `plan`/`render`, `upgrade PLAN`, and `logs PLAN` for enrolled host
-  instances. Stable publisher metadata and verified registry digests are frozen in
+  Each checkout owns one configured namespace; the existing configuration is
+  authoritative. Missing, ambiguous or mismatched configuration fails closed.
+- Adds `status`, `plan`/`render`, `upgrade PLAN`, and `logs PLAN` for enrolled
+  checkouts. Stable publisher metadata and verified registry digests are frozen in
   sealed plans; source, namespace/PVC, authentication and resource drift fail closed.
 - Runs upgrades independently in a host systemd service using reviewed root-owned
   source, existing sudo rights and an imported operator-owned Velero backend.
-  Both recovery clients bind to the profile's protected kubeconfig; cold-backup,
+  Both recovery clients bind to the binding's protected kubeconfig; cold-backup,
   original replica metadata, durable phase/log handles and failure evidence survive
   loss of the initiating Agent session. No sudoers changes or new backup framework.
 - Adds isolated-test rendering for explicitly selected test namespaces. Isolation
@@ -32,7 +32,7 @@ release convention. Application image defaults are not changed by this version b
 - Existing 2.7.8/2.7.9 users should follow the [README migration workflow](README.md#existing-installations-maintenance-and-upgrade)
   and [administrator enrollment guide](docs/host-maintenance.md). Merely fetching
   this PR or changing `VERSION` neither installs the helper nor upgrades workloads.
-- `upgrade` no longer means restart; without a selected instance and prepared plan
+- `upgrade` no longer means restart; without a validated checkout and prepared plan
   it refuses to act. Use the separate legacy `restart` deliberately when needed.
 - Cold backup and rollout cause downtime. A successful service launch is not
   completed application acceptance. Failures do not automatically rewind data or

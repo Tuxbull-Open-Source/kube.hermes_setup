@@ -35,6 +35,59 @@ class Contract(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
         self.assertIn(b'No rollout', p.stderr)
 
+    def test_checkout_configuration_contract(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root / 'hermes.env'
+            text = 'HERMES_NAMESPACE=fixture\nHERMES_AUTH_MODE=external-oidc\n'
+            source.write_text(text)
+            protected = root / 'protected.env'
+            protected.write_text(text)
+            binding = dict(checkout=str(root), config_path=str(source), namespace='fixture',
+                           source=str(root), env_file=str(protected), recovery_backend='/backend', kubeconfig='/config')
+            config = root / (host.binding_id(root) + '.json')
+            config.write_text(json.dumps(binding))
+            with patch.object(host, 'CONFIG', root), patch.object(host, 'trusted', side_effect=Path):
+                self.assertEqual(host.profile(str(root)), binding)
+                # A protected mapping cannot route this checkout to another namespace.
+                binding['namespace'] = 'other'
+                config.write_text(json.dumps(binding))
+                with self.assertRaisesRegex(host.Error, 'Configured namespace differs'):
+                    host.profile(str(root))
+                binding['namespace'] = 'fixture'
+                config.write_text(json.dumps(binding))
+                # Changes after planning fail before any cluster interaction.
+                source.write_text(text + 'HERMES_WEBUI_ENABLED=false\n')
+                with self.assertRaisesRegex(host.Error, 'differs from reviewed'):
+                    host.guard(binding, root, {})
+                source.write_text(text)
+                import hashlib
+                plan = {'profile': binding, 'config_sha256': hashlib.sha256(source.read_bytes()).hexdigest()}
+                source.write_text(text + '# changed after planning\n')
+                with self.assertRaisesRegex(host.Error, 'changed after plan'):
+                    host.guard(binding, root, plan)
+                source.write_text(text)
+                (root / 'current_config').mkdir()
+                (root / 'current_config/hermes.env').write_text(text)
+                with self.assertRaisesRegex(host.Error, 'ambiguous'):
+                    host.profile(str(root))
+                source.unlink()
+                (root / 'current_config/hermes.env').write_text('HERMES_AUTH_MODE=external-oidc\n')
+                with self.assertRaisesRegex(host.Error, 'Explicit configured namespace'):
+                    host.source_config(str(root))
+
+    def test_wrong_namespace_uid(self):
+        with patch.object(host, 'kube', side_effect=[{'metadata': {'uid': 'cluster'}}, {'metadata': {'uid': 'wrong'}}, {'items': []}]):
+            with self.assertRaisesRegex(host.Error, 'Namespace UID'):
+                host.snapshot({'namespace': 'fixture', 'namespace_uid': 'expected', 'cluster_uid': 'cluster'})
+
+    def test_removed_selector(self):
+        result = subprocess.run([str(ROOT / 'maintenance.sh'), '--instance', 'other', 'status'], capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(b'not supported', result.stderr)
+
     def test_prerelease(self):
         for record in [{'tag_name': 'v1.2.3', 'prerelease': True}, {'tag_name': 'experimental-v1.2.3'}, {'tag_name': 'v1.2.3-rc.1'}, {'tag_name': 'v1.2.3', 'draft': True}]:
             with self.assertRaises(ValueError):

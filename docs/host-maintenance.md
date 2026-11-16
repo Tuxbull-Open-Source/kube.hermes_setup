@@ -5,43 +5,38 @@ and [2.7.8/2.7.9 migration steps](../README.md#existing-installations-maintenanc
 It is under PR review, not a published release. `maintain.sh` remains canonical;
 `maintenance.sh` is its compatibility launcher, not a second implementation.
 The old `upgrade` command merely restarted existing images; it did not update the
-installer or image pins. It now fails closed without an explicitly selected host
-instance and prepared plan. `restart` remains a separate legacy operation.
+installer or image pins. It now fails closed without a validated checkout binding
+and prepared plan. `restart` remains a separate legacy operation.
 
 ## Operator interface
 
 ```bash
-./maintenance.sh --instance assistant --help
-./maintenance.sh --instance assistant status
-./maintenance.sh --instance assistant plan --latest-stable
-./maintenance.sh --instance assistant logs assistant-PLAN_ID
+./maintenance.sh --help
+./maintenance.sh status
+./maintenance.sh plan --latest-stable
+./maintenance.sh logs PLAN_ID
 # Downtime: cold backup followed by installer rollout, independently of this shell.
-./maintenance.sh --instance assistant upgrade assistant-PLAN_ID
+./maintenance.sh upgrade PLAN_ID
 ```
 
 Use the exact plan ID printed by `plan`, not the example above. `render` is an
 alias for preparation without cluster writes. Both commands create protected host
 artifacts; they are not filesystem-read-only. `status` and `logs` are read-only.
-With a saved instance, no command displays host-mode help; explicit selection
-requires a command, such as `--instance assistant --help`. Without an instance,
-help displays legacy operations (its bare `upgrade` example refuses to act).
-Host mode supports only `status`, `plan [--latest-stable]`,
-`render [--latest-stable]`, `upgrade PLAN`, and `logs PLAN`; there are no
-`--execute`, `--dry-run`, `--force`, or automatic-rollback flags.
-To save only an instance name in an operator checkout:
+One checkout owns exactly one namespace. Its existing root `hermes.env` or
+wizard-generated `current_config/hermes.env` is authoritative. Host maintenance
+requires exactly one of these files and explicit namespace/authentication settings.
+It does not accept a namespace selector or environment-file override. If the source
+says `hermes` but the protected target differs, it fails before cluster writes;
+there is no automatic discovery or fallback to another namespace. Reconcile the
+existing configuration with operator approval, including persistent wizard answers
+where applicable, rather than adding a second configuration mechanism. Do not
+attribute a mismatch to a person without evidence.
 
-```bash
-(umask 077; printf '%s\n' assistant > .maintenance-instance)
-./maintenance.sh status
-```
-
-The selected profile bypasses unrelated `current_config/hermes.env` defaults.
-It never rewrites that wizard configuration. A checkout whose default namespace
-is `hermes` with `local-password` cannot infer a different instance's OIDC setup.
-This is a selection problem, not grounds to change ownership, sudoers, or passwords.
-Do not prefix the checkout launcher with sudo: it calls the fixed installed helper
-through existing sudo rights. Credential rotation remains an explicit `ENV_FILE`
-legacy operation, from a checkout without a saved host instance.
+Host commands are `status`, `plan [--latest-stable]`, `render [--latest-stable]`,
+`upgrade PLAN`, and `logs PLAN`. There are no `--execute`, `--dry-run`, `--force`,
+or automatic-rollback flags. Do not prefix the checkout launcher with sudo: it
+calls the fixed installed helper through existing sudo rights. Existing explicit
+credential operations remain separate from upgrades.
 
 ## Administrator provisioning and trust boundary
 
@@ -63,11 +58,17 @@ symlinks. Install `scripts/host_maintenance.py` as a regular root-owned executab
 PyYAML, Bash, kubectl, systemd, and the existing operator recovery backend.
 No pip/npm changes inside application containers are involved.
 
-Create root-only `/etc/hermes-maintenance/assistant.json` with explicit values:
+Create a root-only internal binding named `checkout-SHA256_PREFIX.json` under
+`/etc/hermes-maintenance/`, where SHA256_PREFIX is the first 24 hex characters of
+the canonical checkout path SHA-256. This deterministic name is not a selectable
+profile. Bind that checkout and its sole configuration file explicitly:
 
 ```json
 {
+  "checkout": "/home/operator/git/kube.hermes_setup",
+  "config_path": "/home/operator/git/kube.hermes_setup/current_config/hermes.env",
   "namespace": "assistant",
+  "cluster_uid": "REPLACE_WITH_KUBE_SYSTEM_NAMESPACE_UID",
   "namespace_uid": "REPLACE_FROM_READ_ONLY_CLUSTER_INVENTORY",
   "pvc_uids": {
     "hermes-home": "REPLACE_FROM_READ_ONLY_CLUSTER_INVENTORY",
@@ -82,11 +83,14 @@ Create root-only `/etc/hermes-maintenance/assistant.json` with explicit values:
 }
 ```
 
-Keep the instance environment on the host, mode 0600. Reconcile it against live
+Keep an exact reviewed snapshot of the checkout environment on the host, mode
+0600. Every command compares it with the source configuration as data, never
+executes operator-writable code. Configuration changes invalidate prepared plans.
+Reconcile it against live
 OIDC references, UID/GID, resources, PVC sizes/storage class, and enabled components.
 Use `HERMES_BOOTSTRAP_MODE=disabled`, empty `HERMES_ADDON_REQUIREMENTS`, and exact
 image tags plus digests. Do not copy credentials into Git or an agent workspace.
-An installer-source change requires a new reviewed root snapshot and profile;
+An installer-source change requires a new reviewed root snapshot and binding;
 a subsequent plan seals all source files by SHA-256. No detached job executes
 from the operator's checkout, and no new sudo rule is installed.
 
@@ -95,7 +99,7 @@ from the operator's checkout, and no new sudo rule is installed.
 `plan --latest-stable` queries each publisher's official GitHub stable release
 metadata and verifies the registry manifest bytes against their digest. It rejects
 prereleases and non-semantic/experimental tags, and records exact targets. Plain
-`plan` verifies the profile's selected release tags and registry digests instead.
+`plan` verifies the configuration's selected release tags and registry digests instead.
 A stable release is not a compatibility qualification. Do not chase a moving latest
 tag during an already approved transaction. Agent/Dashboard share the Agent image;
 Node/browser-controller updates follow that image's installer-managed preparation,
@@ -127,7 +131,7 @@ selects the already reviewed root-owned Python backend implementing `ROOT`,
 `backup(namespace, folder) -> (name, metadata)`, `eligible(name, namespace)`, and
 `diagnostics(namespace, folder)`. It must expose its kubectl and Velero argv as
 `K` and `V`, each containing one explicit `--kubeconfig PATH`; the coordinator binds
-both to the profile's protected kubeconfig. If the cluster's usual configuration
+both to the binding's protected kubeconfig. If the cluster's usual configuration
 has operator-writable parent directories, provision a reviewed root-only credential
 snapshot instead; do not loosen that directory or add executable auth plugins.
 `ROOT/operation.lock` must be the same lock used
