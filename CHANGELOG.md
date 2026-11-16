@@ -16,6 +16,7 @@ release convention. Application image defaults are not changed by this version b
 - Adds `maintenance.sh` as a compatibility launcher for canonical `maintain.sh`.
   Each checkout owns one configured namespace; the existing configuration is
   authoritative. Missing, ambiguous or mismatched configuration fails closed.
+  Saved wizard answers can retain disabled bootstrap during maintenance replay.
 - Adds `status`, `plan`/`render`, `upgrade PLAN`, and `logs PLAN` for enrolled
   checkouts. Stable publisher metadata and verified registry digests are frozen in
   sealed plans; source, namespace/PVC, authentication and resource drift fail closed.
