@@ -2,7 +2,7 @@
 
 The 2.8.0 candidate adds this workflow; see the [release notes](../CHANGELOG.md#v280---unreleased)
 and [2.7.8/2.7.9 migration steps](../README.md#existing-installations-maintenance-and-upgrade).
-It is under PR review, not a published release. `maintain.sh` remains canonical;
+The feature is merged into `main`, but is not a published release. `maintain.sh` remains canonical;
 `maintenance.sh` is its compatibility launcher, not a second implementation.
 The old `upgrade` command merely restarted existing images; it did not update the
 installer or image pins. It now fails closed without a validated checkout binding
@@ -122,6 +122,42 @@ roll back data or repeat installation. `logs PLAN` shows durable phase, backup a
 unit handles. A completed rollout still requires application acceptance: login,
 API, browser/CDP, user configuration and logical-data preservation. The tool does
 not claim those checks merely from Ready Pods.
+
+## Retained bootstrap archives
+
+An existing `hermes-bootstrap-archive` is a normal result of installation, not
+permission to replay old settings or replace installed addons during an image
+upgrade. Do not delete this Secret merely to make planning pass.
+
+The coordinator seals `HERMES_MAINTENANCE_UPGRADE=true` into its candidate env.
+This is an internal installer mode, not a new target selector or a substitute
+for checkout enrollment. It requires disabled bootstrap and empty addon
+requirements. It suppresses archive generation even when Ansible is enabled,
+leaves the Kubernetes Secret untouched, and prevents the init job from extracting
+or consuming the retained archive. Runtime SSH/Ansible settings remain unchanged.
+Normal installation and deliberate bootstrap reconfiguration retain their existing
+behavior outside maintenance mode.
+
+Plans report whether an archive is retained or absent, without displaying its
+contents. Existing sealed-plan checks reject live Secret-data drift before
+execution; post-install checks require preservation. These checks do not grant
+permission to rotate or delete archives. Cold backups and operator-controlled
+recovery remain mandatory parts of the host workflow.
+
+Regression commands:
+
+```bash
+python3 tests/maintenance-bootstrap.py
+# Disposable cluster ONLY. Seed using the baseline installer, then install the
+# candidate source revision before verify. Synthetic data; never production PVCs.
+python3 tests/maintenance-bootstrap-live.py seed --allow-disposable-cluster
+python3 tests/maintenance-bootstrap-live.py verify --allow-disposable-cluster
+```
+
+The live fixture checks full-stack readiness, Secret UID/resourceVersion/data,
+PVC identities, a customized bootstrap marker, and a second unchanged installer
+run. It is not a full Velero-backed coordinator upgrade or browser-login test.
+See [the recorded qualification and limitations](qa-bootstrap-retention.md).
 
 ## Recovery ownership
 

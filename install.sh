@@ -401,6 +401,16 @@ prepare_defaults() {
   export HERMES_BOOTSTRAP_MODE="${HERMES_BOOTSTRAP_MODE:-missing}"
   export HERMES_BOOTSTRAP_INCLUDE_AUTH="${HERMES_BOOTSTRAP_INCLUDE_AUTH:-false}"
   export HERMES_ADDON_REQUIREMENTS="${HERMES_ADDON_REQUIREMENTS:-}"
+  # Sealed host-maintenance candidates must never rebuild or replay bootstrap.
+  export HERMES_MAINTENANCE_UPGRADE="${HERMES_MAINTENANCE_UPGRADE:-false}"
+  case "$HERMES_MAINTENANCE_UPGRADE" in
+    true)
+      [[ "$HERMES_BOOTSTRAP_MODE" == disabled ]] || fail "Maintenance upgrade requires disabled bootstrap"
+      [[ -z "$HERMES_ADDON_REQUIREMENTS" ]] || fail "Maintenance upgrade must not replace addon packages"
+      ;;
+    false) ;;
+    *) fail "HERMES_MAINTENANCE_UPGRADE must be boolean" ;;
+  esac
   # Hard-coded addon runtime facts. Keep these out of hermes.env examples unless the chart changes.
   export HERMES_ADDON_PYTHON_MODE="uv"
   export HERMES_UV_DIR="/opt/data/uv"
@@ -605,6 +615,7 @@ compose_profile_bootstrap() {
 }
 
 archive_enabled() {
+  [[ "${HERMES_MAINTENANCE_UPGRADE:-false}" != true ]] || return 1
   bootstrap_enabled || addon_requirements_enabled || is_truthy "$HERMES_ANSIBLE_SETUP"
 }
 
@@ -719,10 +730,17 @@ PY
 }
 
 create_namespace_and_secrets() {
+  if [[ "${HERMES_MAINTENANCE_UPGRADE:-false}" == true ]]; then
+    [[ ! -f "$BOOTSTRAP_ARCHIVE" ]] || fail "Unexpected bootstrap archive during maintenance"
+  fi
   log "Creating namespace and secrets"
   kubectl create namespace "$HERMES_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-  if [[ -f "$BOOTSTRAP_ARCHIVE" ]]; then
+  if [[ "${HERMES_MAINTENANCE_UPGRADE:-false}" == true ]]; then
+    # Leave any retained archive completely untouched; no extraction, replacement
+    # or deletion. The host coordinator checks Secret preservation and drift.
+    log "Preserving existing bootstrap Secret without replay"
+  elif [[ -f "$BOOTSTRAP_ARCHIVE" ]]; then
     kubectl -n "$HERMES_NAMESPACE" create secret generic hermes-bootstrap-archive       --from-file=bootstrap.tar.gz="$BOOTSTRAP_ARCHIVE"       --dry-run=client -o yaml | kubectl apply -f -
   else
     kubectl -n "$HERMES_NAMESPACE" delete secret hermes-bootstrap-archive --ignore-not-found=true >/dev/null

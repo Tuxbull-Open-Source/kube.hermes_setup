@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Host-maintenance planning now accepts a retained `hermes-bootstrap-archive`
+  Secret. Sealed maintenance runs preserve it without creating, deleting,
+  extracting or replaying it. Existing Secret drift/preservation checks remain
+  enforced. Ansible-enabled instances do not regenerate an addon archive during
+  an image-only maintenance run; normal installation behavior is unchanged.
+- Adds local regressions and an opt-in disposable-cluster bootstrap retention
+  test. Live installer preservation is distinct from full Velero-backed upgrade
+  and application acceptance.
+
 ## [v2.8.0] - Unreleased
 
 Release candidate in [PR #127](https://github.com/Tuxbull-Open-Source/kube.hermes_setup/pull/127),

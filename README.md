@@ -14,8 +14,8 @@ Lab-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/no
 The repository is template-driven. Deployment-specific configuration, credentials, OAuth state, kubeconfigs, rendered artifacts, and backups must remain outside Git.
 
 **Installer candidate: 2.8.0** (see [`VERSION`](VERSION) and the
-[release notes](CHANGELOG.md#v280---unreleased)). PR #127 is still under review;
-this is not a published release. Installer versions are separate from application
+[release notes](CHANGELOG.md#v280---unreleased)). The maintenance feature from
+PR #127 is merged into `main`; this is not a published release. Installer versions are separate from application
 image versions, and updating this checkout does not upgrade a running instance.
 
 ## Requirements
@@ -41,7 +41,7 @@ cd kube.hermes_setup
 
 The configurator writes Git-ignored deployment files under `current_config/`. Review them before installation. Use [`examples/hermes.env.example`](examples/hermes.env.example) as the complete configuration-variable reference.
 
-For production use, read the security, operations, and QA guides before continuing:
+Before testing this lab setup, read the security, operations, and QA guides:
 
 ```bash
 ./install.sh
@@ -55,21 +55,20 @@ this feature. Retain the private configuration and recovery tools. The canonical
 implementation is `maintain.sh`; the literal `maintenance.sh` is its compatibility
 launcher. Bare `upgrade` now refuses to act instead of merely restarting images.
 
-To review the **unmerged 2.8.0 candidate**, use a separate checkout (choose an
-unused directory); pulling `main` does not obtain this PR:
+To review the **merged, not yet released 2.8.0 code**, use a separate checkout
+(choose an unused directory):
 
 ```bash
-git clone --branch feat/explicit-maintenance-upgrade --single-branch \
+git clone --branch main --single-branch \
   https://github.com/Tuxbull-Open-Source/kube.hermes_setup.git kube.hermes_setup-review
 cd kube.hermes_setup-review
 git log -1 --oneline
 ./maintenance.sh --help
 ```
 
-Review the exact PR head before provisioning it. This only obtains source and
-shows help: it installs no host helper and changes no cluster resources. After
-merge/release, use the maintainer-approved revision instead of assuming this
-review branch is a published tag.
+Review and record the exact commit before provisioning it. This only obtains
+source and shows help: it installs no host helper and changes no cluster
+resources. Do not treat a moving branch as a published release tag.
 
 An administrator must first provision the [root-owned helper, source snapshot,
 checkout binding and existing recovery backend](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
@@ -86,6 +85,12 @@ Then run as the ordinary operator with existing sudo rights, on that host:
 ./maintenance.sh logs PLAN_ID
 ./maintenance.sh status
 ```
+
+Existing bootstrap Secrets do not need to be deleted to prepare an upgrade: maintenance
+preserves them without archive regeneration or replay, including Ansible-enabled
+instances. The sealed candidate selects this behavior automatically; retain
+`HERMES_BOOTSTRAP_MODE=disabled` and empty `HERMES_ADDON_REQUIREMENTS` in the
+reviewed maintenance configuration. See [bootstrap preservation](docs/host-maintenance.md#retained-bootstrap-archives).
 
 `status` reports resource availability, not application acceptance. `logs` reports
 durable phase, backup, systemd unit and protected log location; it is not a log-tail
