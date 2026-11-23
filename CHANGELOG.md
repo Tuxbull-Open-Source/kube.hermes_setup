@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ## [v2.9.0] - Unreleased
 
+Release preparation consolidates the unpublished 2.8.0 candidate and the following
+repository-owned recovery changes. See [the release handoff](docs/release-2.9.0.md)
+for compatibility, qualification and publication gates. `VERSION` is already 2.9.0;
+opening a release PR neither publishes a tag nor updates deployed workloads.
+
 ### Added
 
 - Repository-owned Velero cold backup, listing and exact-name recovery through

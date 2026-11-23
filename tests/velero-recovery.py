@@ -30,11 +30,28 @@ class Fake(r.RecoveryBackend):
         super().__init__(BINDING)
         self.nsuid = BINDING['namespace_uid']
         self.pvcuids = dict(BINDING['pvc_uids'])
-        self.deps = [obj('agent', spec={'replicas': 2}), obj('browser', spec={'replicas': 0})]
+        self.deps = [obj('hermes-agent', spec={'replicas': 2, 'template': {'spec': {'containers': [
+            {'name': 'agent', 'image': 'example/image:v1.0.0@sha256:' + 'a' * 64}]}}}),
+                     obj('browser', spec={'replicas': 0})]
+        self.resource_snapshots = {}
+        self.rss = []
         self.pods, self.backups, self.restores, self.records = [], {}, {}, {}
         self.actions, self.objects = [], []
         self.fail_backup = self.fail_resume = self.fail_remove = self.bad_hash = False
         self.deleted = False
+        self.unhealthy = False
+
+    def make_unhealthy(self):
+        self.unhealthy = True
+        self.deps[0]['spec']['template']['spec']['containers'][0]['image'] = 'example/image:bad-image'
+        rs = obj('failed-rs')
+        rs['metadata']['ownerReferences'] = [{'uid': self.deps[0]['metadata']['uid'], 'controller': True}]
+        self.rss = [rs]
+        pod = obj('failed-pod', spec={'containers': [{'name': 'agent', 'image': 'example/image:bad-image'}]},
+                  status={'phase': 'Pending', 'containerStatuses': [
+                      {'name': 'agent', 'state': {'waiting': {'reason': 'ImagePullBackOff'}}}]})
+        pod['metadata']['ownerReferences'] = [{'uid': rs['metadata']['uid'], 'controller': True}]
+        self.pods = [pod]
 
     def _get(self, kind, name=None, ns=None):
         if name is None:
@@ -69,6 +86,8 @@ class Fake(r.RecoveryBackend):
                         {'phase': 'Bound'}) for n, u in self.pvcuids.items()]
         if kind == 'deployments':
             return copy.deepcopy(self.deps)
+        if kind == 'replicasets':
+            return copy.deepcopy(self.rss)
         if kind == 'pods':
             return copy.deepcopy(self.pods)
         if kind == 'namespaces':
@@ -85,12 +104,16 @@ class Fake(r.RecoveryBackend):
         if 'api-resources' in argv:
             return 'namespaces\npersistentvolumes\ncustomresourcedefinitions.apiextensions.k8s.io\n'
         self.actions.append(list(argv))
+        if 'rollout' in argv and self.unhealthy and not self.deleted:
+            raise r.RecoveryError('mock bad image cannot become ready')
         if 'scale' in argv:
             name = next(a.split('/', 1)[1] for a in argv if a.startswith('deployment/'))
             replicas = int(next(a.split('=')[1] for a in argv if a.startswith('--replicas=')))
             if self.fail_resume and replicas:
                 raise r.RecoveryError('mock resume failure')
             next(d for d in self.deps if d['metadata']['name'] == name)['spec']['replicas'] = replicas
+            if replicas == 0:
+                self.pods = [p for p in self.pods if not p['metadata'].get('ownerReferences')]
         if 'exec' in argv:
             return PROBES.replace('a', 'c') if self.bad_hash and self.deleted else PROBES
         if 'delete' in argv and 'pod' in argv:
@@ -101,7 +124,8 @@ class Fake(r.RecoveryBackend):
             self.nsuid, self.pods, self.deleted = None, [], True
         if 'annotate' in argv:
             name = argv[argv.index('backups.velero.io') + 1]
-            self.backups[name]['metadata']['annotations'][r.SEAL] = 'true'
+            key, value = argv[-1].split('=', 1)
+            self.backups[name]['metadata']['annotations'][key] = value
         return ''
 
     def _archive_scope(self, name, meta, folder):
@@ -121,11 +145,14 @@ class Fake(r.RecoveryBackend):
             value = copy.deepcopy(value)
             value['status'] = {'phase': 'Completed', 'expiration': '2099-01-01T00:00:00Z'}
             self.backups[name] = value
+            self.resource_snapshots[name] = copy.deepcopy(self.deps)
             m = json.loads(value['metadata']['annotations'][r.KEY])
             self._records(name, m)
         if kind == 'Restore':
             self.nsuid = 'ns-restored'
             self.pvcuids = {n: u + '-new' for n, u in self.pvcuids.items()}
+            self.deps = copy.deepcopy(self.resource_snapshots[value['spec']['backupName']])
+            self.rss = []
             for d in self.deps:
                 d['metadata']['uid'] += '-new'
             m = json.loads(self.backups[value['spec']['backupName']]['metadata']['annotations'][r.KEY])
@@ -271,7 +298,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_preflight_is_read_only(self):
         m = self.b.preflight(self.ns)
-        self.assertEqual(m['replicas'], {'agent': 2, 'browser': 0})
+        self.assertEqual(m['replicas'], {'hermes-agent': 2, 'browser': 0})
         self.assertFalse(self.b.actions)
         self.assertFalse(self.b.objects)
 
@@ -400,6 +427,90 @@ class RecoveryTests(unittest.TestCase):
         self.b.fail_backup = True
         with self.assertRaises(r.RecoveryError): self.b.restore(name, self.ns, self.folder / 'restore')
         self.assertFalse(self.b.deleted)
+
+    def test_unhealthy_restore_captures_safety_without_resuming_failed_app(self):
+        name, _ = self.backup()
+        self.b.make_unhealthy()
+        self.b.actions.clear()
+        with patch.object(self.b, 'diagnostics', wraps=self.b.diagnostics) as diagnostics:
+            result = self.b.restore(name, self.ns, self.folder / 'restore')
+        diagnostics.assert_called_once()
+        pods = json.loads((self.folder / 'restore/diagnostics/pods.json').read_text())
+        self.assertEqual(pods[0]['status']['containerStatuses'][0]['state']['waiting']['reason'], 'ImagePullBackOff')
+        safety = result['safetyBackup']
+        image = lambda deps: deps[0]['spec']['template']['spec']['containers'][0]['image']
+        self.assertEqual(image(self.b.resource_snapshots[safety]), 'example/image:bad-image')
+        self.assertEqual(image(self.b.deps), image(self.b.resource_snapshots[name]))
+        annotations = self.b.backups[safety]['metadata']['annotations']
+        self.assertEqual(annotations[r.SAFETY_SEAL], 'true')
+        self.assertNotIn(r.SEAL, annotations)
+        self.assertEqual(json.loads(annotations[r.KEY])['purpose'], 'safety-only')
+        self.assertEqual(len(self.b.records[('podvolumebackups.velero.io', safety)]), 2)
+        deletion = next(i for i, a in enumerate(self.b.actions) if 'delete' in a and 'namespace' in a)
+        self.assertFalse(any('rollout' in a or '--replicas=2' in a for a in self.b.actions[:deletion]))
+        self.assertFalse((self.folder / 'restore/safety/resume.json').exists())
+        with self.assertRaisesRegex(r.RecoveryError, 'Safety-only'):
+            self.b.eligible(safety, self.ns)
+        # Even an accidentally added normal seal cannot promote this checkpoint.
+        annotations[r.SEAL] = 'true'
+        with self.assertRaisesRegex(r.RecoveryError, 'Safety-only'):
+            self.b.eligible(safety, self.ns)
+        self.assertEqual(result['stage'], 'completed')
+
+    def test_normal_unhealthy_backup_cannot_get_resume_seal(self):
+        self.b.make_unhealthy()
+        with self.assertRaises(r.RecoveryError):
+            self.backup()
+        name = next(iter(self.b.backups))
+        with self.assertRaisesRegex(r.RecoveryError, 'successful-resume'):
+            self.b.eligible(name, self.ns)
+        self.assertNotIn(r.SAFETY_SEAL, self.b.backups[name]['metadata']['annotations'])
+
+    def test_safety_failures_never_delete_namespace_or_resume_writers(self):
+        for failure in ('helper', 'coverage', 'archive', 'capture'):
+            with self.subTest(failure=failure):
+                self.b = Fake()
+                name, _ = self.backup()
+                self.b.make_unhealthy()
+                self.b.actions.clear()
+                original_archive = self.b._archive_scope
+                def archive(backup, meta, folder):
+                    if failure == 'archive' and backup != name:
+                        raise r.RecoveryError('mock unsafe archive')
+                    return original_archive(backup, meta, folder)
+                original_coverage = self.b._coverage
+                def coverage(backup, meta, restore=False):
+                    if failure == 'coverage' and backup != name:
+                        raise r.RecoveryError('mock incomplete PVC coverage')
+                    return original_coverage(backup, meta, restore)
+                self.b.fail_remove = failure == 'helper'
+                self.b.fail_backup = failure == 'capture'
+                with patch.object(self.b, '_archive_scope', side_effect=archive), \
+                     patch.object(self.b, '_coverage', side_effect=coverage), self.assertRaises(r.RecoveryError):
+                    self.b.restore(name, self.ns, self.folder / 'restore')
+                self.assertFalse(self.b.deleted)
+                self.assertEqual([d['spec']['replicas'] for d in self.b.deps], [0, 0])
+                self.assertFalse(any('rollout' in a or 'annotate' in a for a in self.b.actions))
+                self.assertTrue((self.folder / 'restore/diagnostics/handoff.json').exists())
+
+    def test_target_expiry_and_restarted_writers_block_after_safety_capture(self):
+        for failure in ('expired-target', 'restarted-writer'):
+            with self.subTest(failure=failure):
+                self.b = Fake()
+                name, _ = self.backup()
+                self.b.make_unhealthy()
+                checkpoint = self.b._checkpoint
+                def capture(*args, **kwargs):
+                    result = checkpoint(*args, **kwargs)
+                    if failure == 'expired-target':
+                        self.b.backups[name]['status']['expiration'] = '2000-01-01T00:00:00Z'
+                    else:
+                        self.b.deps[0]['spec']['replicas'] = 1
+                    return result
+                with patch.object(self.b, '_checkpoint', side_effect=capture), self.assertRaises(r.RecoveryError):
+                    self.b.restore(name, self.ns, self.folder / 'restore')
+                self.assertFalse(self.b.deleted)
+                self.assertFalse(self.b.restores)
 
     def test_subprocess_failures_do_not_leak_output(self):
         b = r.RecoveryBackend(BINDING)

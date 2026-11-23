@@ -124,6 +124,64 @@ class Coordinator(unittest.TestCase):
             publish.assert_not_called()
         self.assertTrue(plan['phase'].startswith('restore-complete'))
 
+    def exercise_real_recovery_contract(self, fail_helper=False):
+        # Reuse only the native-CLI fixture: coordinator, guard, snapshot, backup,
+        # restore, seals, coverage and image reconciliation run their real code.
+        spec = importlib.util.spec_from_file_location('backend_fixture', ROOT / 'tests/velero-recovery.py')
+        fixture = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fixture)
+        backend = fixture.Fake()
+        backend.ROOT = self.root
+        name, _ = backend.backup(backend.binding['namespace'], self.root / 'known-good')
+        backend.make_unhealthy()
+        backend.fail_remove = fail_helper
+        backend.actions.clear()
+        profile, _, _ = self.pin_fixture()
+        profile.update(backend.binding, source=str(ROOT), source_revision='reviewed')
+        audit = self.root / 'CHANGES.md'; audit.write_text('')
+        def run(args):
+            if args[0] == 'systemd-run':
+                return ''
+            self.assertEqual(args[0], 'kubectl')
+            i = args.index('get')
+            kind = args[i + 1]
+            name = args[i + 2] if args[i + 2] != '-o' else None
+            ns = args[args.index('-n') + 1] if '-n' in args else None
+            return json.dumps(backend._get(kind, name, ns))
+        with patch.object(h, 'recovery_backend', return_value=backend), \
+             patch.object(h, 'profile', return_value=profile), \
+             patch.object(h, 'trusted', side_effect=lambda p: audit if str(p) == '/CHANGES.md' else Path(p)), \
+             patch.object(h, 'tree_hash', return_value={}), \
+             patch.object(h, 'STATE', self.root / 'state'), \
+             patch.object(h.os, 'statvfs', return_value=SimpleNamespace(f_bavail=50, f_blocks=100)), \
+             patch.object(h, 'run', side_effect=run), patch.object(h, 'output'):
+            h.launch_recovery(profile, 'checkout-fixture', 'restore', name)
+            folder = next((self.root / 'state').iterdir())
+            plan = json.loads((folder / 'plan.json').read_text())
+            if fail_helper:
+                with self.assertRaises(fixture.r.RecoveryError):
+                    h.recovery_worker(profile, folder, plan)
+                self.assertFalse(backend.deleted)
+                self.assertTrue((folder / 'failure.json').exists())
+                self.assertEqual([d['spec']['replicas'] for d in backend.deps], [0, 0])
+            else:
+                h.recovery_worker(profile, folder, plan)
+                result = json.loads((folder / 'restore-result.json').read_text())
+                self.assertEqual(result['stage'], 'completed')
+                self.assertEqual(h.envfile(profile['config_path'])['HERMES_AGENT_IMAGE'],
+                                 'example/image:v1.0.0@sha256:' + 'a' * 64)
+                self.assertTrue(plan['phase'].startswith('restore-complete'))
+                with self.assertRaises(fixture.r.RecoveryError):
+                    backend.eligible(result['safetyBackup'], profile['namespace'])
+            self.assertTrue((folder / 'diagnostics/handoff.json').exists())
+            self.assertFalse((folder / 'safety/resume.json').exists())
+
+    def test_real_coordinator_backend_unhealthy_restore_contract(self):
+        self.exercise_real_recovery_contract()
+
+    def test_real_coordinator_backend_unsafe_helper_blocks_deletion(self):
+        self.exercise_real_recovery_contract(fail_helper=True)
+
     def pin_fixture(self):
         images = {key: 'example/image:v1.2.3@sha256:' + 'a' * 64 for key in
                   ['HERMES_AGENT_IMAGE', 'HERMES_WEBUI_IMAGE', 'HERMES_BROWSER_IMAGE']}

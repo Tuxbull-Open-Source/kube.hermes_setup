@@ -24,6 +24,7 @@ import uuid
 ROOT = Path('/srv/backup/hermes-maintenance/recovery')
 KEY = 'recovery.hermes.io/metadata'
 SEAL = 'recovery.hermes.io/sealed'
+SAFETY_SEAL = 'recovery.hermes.io/safety-checkpoint'
 PVC_NAMES = {'hermes-home', 'hermes-workspace'}
 VOLUMES = {'home', 'workspace'}
 TERMINAL = {'Completed', 'Failed', 'PartiallyFailed', 'FailedValidation', 'Canceled'}
@@ -399,10 +400,20 @@ done'''
         return obj
 
     def backup(self, ns, folder):
+        return self._checkpoint(ns, folder, safety_only=False)
+
+    def _checkpoint(self, ns, folder, *, safety_only):
+        """Safety-only capture never resumes failed writers or becomes a restore target.
+
+        Only restore uses this path, after preserving diagnostics and validating a
+        separate eligible target. All cold data, resource and identity gates apply.
+        """
         folder = Path(folder)
         meta = self.preflight(ns)
-        name = 'hermes-cold-' + uuid.uuid4().hex
+        name = ('hermes-safety-' if safety_only else 'hermes-cold-') + uuid.uuid4().hex
         meta['backup'] = name
+        if safety_only:
+            meta['purpose'] = 'safety-only'
         save(folder / 'replicas.json', meta)
         failed = False
         try:
@@ -436,28 +447,45 @@ done'''
             failed = True
             raise
         finally:
-            # Cleanup and resume are independent attempts, but do not start writers
-            # if helper absence cannot be proven. Never seal failed cleanup/resume.
+            # Never resume on the safety path, even if capture or cleanup fails.
+            # Ordinary backups retain their mandatory successful-resume contract.
             try:
                 self._remove_helper(meta)
-                self._resume(meta)
-                save(folder / 'resume.json', {'resumed': True, 'backupFailed': failed})
+                if safety_only:
+                    require(self._quiet(ns) and all(d['spec'].get('replicas', 1) == 0
+                            for d in self._items('deployments', ns)), 'Safety checkpoint writers are not stopped')
+                    save(folder / 'safety-state.json', {'writersStopped': True, 'backupFailed': failed,
+                                                       'backup': name, 'restoreEligible': False})
+                else:
+                    self._resume(meta)
+                    save(folder / 'resume.json', {'resumed': True, 'backupFailed': failed})
             except BaseException:
-                save(folder / 'resume.json', {'resumed': False, 'manualRecoveryRequired': True,
-                                            'replicas': meta['replicas'], 'backup': name})
+                save(folder / ('safety-state.json' if safety_only else 'resume.json'),
+                     {'resumed': False, 'manualRecoveryRequired': True,
+                      'replicas': meta['replicas'], 'backup': name})
                 raise RecoveryError('Backup cleanup/resume failed; preserve replicas.json for manual recovery') from None
-        self._run(self.K + ['-n', self.velero_namespace, 'annotate', 'backups.velero.io', name, SEAL + '=true'])
-        self.eligible(name, ns)  # Read back exact seal and immutable coverage before success.
+        seal = SAFETY_SEAL if safety_only else SEAL
+        self._run(self.K + ['-n', self.velero_namespace, 'annotate', 'backups.velero.io', name, seal + '=true'])
+        self._validated_checkpoint(name, ns, safety_only=safety_only)
         return name, meta
 
     def eligible(self, name, ns):
+        return self._validated_checkpoint(name, ns, safety_only=False)
+
+    def _validated_checkpoint(self, name, ns, *, safety_only):
         self._scope(ns)
         require(valid_name(name), 'Invalid backup name')
         try:
             b = self._get('backups.velero.io', name, self.velero_namespace)
             annotations = b['metadata'].get('annotations', {})
             m = json.loads(annotations.get(KEY, '{}'))
-            require(annotations.get(SEAL) == 'true', 'Backup has no successful-resume seal')
+            if safety_only:
+                require(m.get('purpose') == 'safety-only' and annotations.get(SAFETY_SEAL) == 'true' and
+                        SEAL not in annotations, 'Safety checkpoint is not complete')
+            else:
+                require(m.get('purpose') is None and SAFETY_SEAL not in annotations,
+                        'Safety-only checkpoint is not an eligible restore target')
+                require(annotations.get(SEAL) == 'true', 'Backup has no successful-resume seal')
             require(m.get('version') == 2 and m.get('instance') == self.instance and m.get('namespace') == ns and
                     m.get('clusterUID') == self.binding['cluster_uid'] and
                     bool(m.get('namespaceUID')) and set(m.get('pvcs', {})) == PVC_NAMES and
@@ -520,6 +548,7 @@ done'''
         self._scope(ns)
         folder = Path(folder)
         pods = self._items('pods', ns)
+        save(folder / 'pods.json', pods)  # Preserve waiting/termination reasons before scale-down.
         save(folder / 'handoff.json', {'pods': [{'name': p['metadata']['name'], 'phase': p.get('status', {}).get('phase')}
                                                for p in pods]})
         save(folder / 'events.json', self._items('events', ns)[-200:])
@@ -559,9 +588,9 @@ done'''
         self.preflight(ns)
         self.diagnostics(ns, folder / 'diagnostics')
         self._archive_scope(name, meta, folder)
-        safety, _ = self.backup(ns, folder / 'safety')
-        self.eligible(safety, ns)
-        self.eligible(name, ns)  # May have expired during the safety backup.
+        safety, _ = self._checkpoint(ns, folder / 'safety', safety_only=True)
+        self._validated_checkpoint(safety, ns, safety_only=True)
+        self.eligible(name, ns)  # May have expired during the safety checkpoint.
         self.preflight(ns)
         rname = 'hermes-restore-' + uuid.uuid4().hex
         state = {'backup': name, 'safetyBackup': safety, 'restore': rname,
@@ -569,10 +598,11 @@ done'''
         save(folder / 'restore-state.json', state)
         self._modifier(rname, ns)
         try:
-            # Stop writers again after the safety backup resumed them.
+            # Safety capture left writers stopped; recheck before replacement.
             current = self.preflight(ns)
             save(folder / 'pre-delete-replicas.json', current)
-            self._scale(current, True)
+            require(all(v == 0 for v in current['replicas'].values()),
+                    'Writers restarted after safety capture; preserve state for manual recovery')
             self._wait(lambda: self._quiet(ns))
             self._identity(ns)
             require(not self._active(), 'Conflicting Velero operation')
