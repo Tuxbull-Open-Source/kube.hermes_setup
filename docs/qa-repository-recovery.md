@@ -129,6 +129,18 @@ operational scripts qualified by the live rehearsal.
   separately. Deploying the new host workflow requires its own reviewed source
   staging/enrollment and an explicit production change authorization.
 
+## Versioned controller isolation follow-up
+
+At revision `75825d205a590ea77aceae1a0437ad2b004be2f2`, the disposable
+operator launcher rejected an outdated installed provisioner before enrollment.
+After administrator bootstrap of the reviewed provisioner, enrollment, status
+and a native two-volume backup succeeded using the version-2 controller path.
+The legacy controller's recorded SHA256 remained unchanged before enrollment,
+after enrollment and after the completed backup. Unit tests additionally check
+its inode, timestamp and permissions and preserve an unrelated legacy binding.
+This follow-up changes controller placement/handshake, not the tested recovery
+algorithm; it does not authorize changing existing production legacy controls.
+
 ## Vendor references
 
 - [Velero restore reference](https://velero.io/docs/v1.18/restore-reference/)
