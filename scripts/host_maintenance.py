@@ -25,7 +25,7 @@ import yaml
 SELF = '/usr/local/libexec/hermes-maintenance.py'
 CONFIG = Path('/etc/hermes-maintenance')
 STATE = Path('/srv/backup/hermes-maintenance')
-SAFE_ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8'}
+SAFE_ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
 class Error(Exception):

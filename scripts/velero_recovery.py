@@ -91,7 +91,7 @@ class RecoveryBackend:
         require(self.velero_namespace != b['namespace'], 'Velero must be outside the managed namespace')
         self.ttl = v.get('ttl', '720h')
         require(isinstance(self.ttl, str) and re.fullmatch(r'[1-9][0-9]*h(?:0m0s)?', self.ttl), 'Invalid backup TTL')
-        self.image = v.get('helper_image', 'docker.io/library/busybox:1.37.0')
+        self.image = v.get('helper_image', 'docker.io/library/busybox:1.37.0@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec')
         require(isinstance(self.image, str) and bool(self.image) and not any(c.isspace() for c in self.image),
                 'Invalid helper image')
         self.K = ['kubectl', '--kubeconfig', b['kubeconfig'], '--request-timeout=45s']
