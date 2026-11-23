@@ -497,6 +497,9 @@ def recovery_worker(p, folder, plan):
             else:
                 result = backend.restore(plan['target_backup'], p['namespace'], folder)
                 save(folder / 'restore-result.json', result)
+                plan['backup'] = plan['target_backup']
+                plan['phase'] = 'restore-complete; reconciling restored image pins'
+                save(folder / 'plan.json', plan)
                 require(kube(p, 'get', 'namespace', p['namespace'])['metadata']['uid'] == result['namespace_uid'],
                         'Restored namespace identity changed before configuration reconciliation')
                 image_keys = {'hermes-agent': 'HERMES_AGENT_IMAGE', 'hermes-webui': 'HERMES_WEBUI_IMAGE',
@@ -506,11 +509,13 @@ def recovery_worker(p, folder, plan):
                 for deployment in kube(p, '-n', p['namespace'], 'get', 'deployments')['items']:
                     key = image_keys.get(deployment['metadata']['name'])
                     if key:
-                        restored_pins[key] = deployment['spec']['template']['spec']['containers'][0]['image']
-                plan['phase'] = 'restore-complete; reconciling restored image pins'
-                save(folder / 'plan.json', plan)
+                        image = deployment['spec']['template']['spec']['containers'][0]['image']
+                        if '@sha256:' not in image:
+                            require('@sha256:' in configured[key] and configured[key].split('@', 1)[0] == image,
+                                    'Restored legacy image tag needs matching reviewed pins; reconcile configuration without replaying restore')
+                        else:
+                            restored_pins[key] = image
                 publish_image_pins(p, folder, {**plan, 'images': restored_pins})
-                plan['backup'] = plan['target_backup']
                 plan['phase'] = 'restore-complete; application acceptance and identity re-enrollment required'
             save(folder / 'plan.json', plan)
         except Exception as exc:

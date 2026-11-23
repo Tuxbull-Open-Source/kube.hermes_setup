@@ -99,24 +99,35 @@ class Coordinator(unittest.TestCase):
                     phase='prepared; no workloads changed')
         audit = self.root / 'CHANGES.md'; audit.write_text('')
         backend = SimpleNamespace(ROOT=self.root, restore=lambda *a: {'namespace_uid': 'new'})
+        restored_image = 'example/image:v1.0.0@sha256:' + 'a' * 64
         def run(args):
             self.assertTrue(all(isinstance(x, str) for x in args))
             if 'namespace' in args:
                 return json.dumps({'metadata': {'uid': 'new'}})
             return json.dumps({'items': [{'metadata': {'name': 'hermes-agent'}, 'spec': {'template':
-                {'spec': {'containers': [{'image': 'example/image:v1.0.0'}]}}}}]})
+                {'spec': {'containers': [{'image': restored_image}]}}}}]})
         with patch.object(h, 'recovery_backend', return_value=backend), \
              patch.object(h, 'trusted', side_effect=lambda p: audit if str(p) == '/CHANGES.md' else Path(p)), \
              patch.object(h, 'recovery_guard'), patch.object(h, 'run', side_effect=run), \
              patch.object(h, 'publish_image_pins') as publish:
             h.recovery_worker(profile, folder, plan)
-        self.assertEqual(publish.call_args.args[2]['images']['HERMES_AGENT_IMAGE'], 'example/image:v1.0.0')
+            self.assertEqual(publish.call_args.args[2]['images']['HERMES_AGENT_IMAGE'], restored_image)
+            restored_image = 'example/image:v1.2.2'
+            publish.reset_mock()
+            h.recovery_worker(profile, folder, plan)
+            self.assertEqual(publish.call_args.args[2]['images']['HERMES_AGENT_IMAGE'],
+                             h.envfile(profile['env_file'])['HERMES_AGENT_IMAGE'])
+            restored_image = 'example/image:v0.0.9'
+            publish.reset_mock()
+            with self.assertRaisesRegex(h.Error, 'matching reviewed pins'):
+                h.recovery_worker(profile, folder, plan)
+            publish.assert_not_called()
         self.assertTrue(plan['phase'].startswith('restore-complete'))
 
     def pin_fixture(self):
         images = {key: 'example/image:v1.2.3@sha256:' + 'a' * 64 for key in
                   ['HERMES_AGENT_IMAGE', 'HERMES_WEBUI_IMAGE', 'HERMES_BROWSER_IMAGE']}
-        data = '# keep comment\nHERMES_NAMESPACE=fixture\nOTHER_VALUE=keep\n' + ''.join(k + '=example/image:v1.2.2\n' for k in images)
+        data = '# keep comment\nHERMES_NAMESPACE=fixture\nOTHER_VALUE=keep\n' + ''.join(k + '=example/image:v1.2.2@sha256:' + 'b' * 64 + '\n' for k in images)
         source, protected = self.root / 'hermes.env', self.root / 'protected.env'
         source.write_text(data); protected.write_text(data)
         folder = self.root / 'operation'; folder.mkdir(mode=0o700)
