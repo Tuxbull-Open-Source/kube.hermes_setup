@@ -76,6 +76,43 @@ class Coordinator(unittest.TestCase):
             snapshot.assert_not_called()
             self.assertFalse((self.root / 'state').exists())
 
+    def test_progress_uses_flat_argv_and_only_public_fields(self):
+        (self.root / 'replicas.json').write_text(json.dumps({'namespace': 'fixture',
+            'backup': 'known-backup', 'private': 'must-not-appear'}))
+        def run(args):
+            self.assertTrue(all(isinstance(x, str) for x in args))
+            if 'podvolumebackups.velero.io' in args:
+                return json.dumps({'items': [{'metadata': {'labels': {'velero.io/backup-name': 'known-backup'}},
+                    'spec': {'volume': 'home'}, 'status': {'phase': 'InProgress',
+                    'progress': {'bytesDone': 10, 'totalBytes': 100}}}]})
+            return json.dumps({'metadata': {'annotations': {}}, 'status': {'phase': 'InProgress'}})
+        with patch.object(h, 'trusted', side_effect=Path), patch.object(h, 'run', side_effect=run):
+            data = h.operation_progress({'namespace': 'fixture', 'kubeconfig': '/example/config',
+                                        'velero': {'namespace': 'velero'}}, self.root)
+        self.assertEqual(data[0]['stage'], 'InProgress')
+        self.assertNotIn('must-not-appear', json.dumps(data))
+
+    def test_restore_pin_reconciliation_uses_real_kube_argument_contract(self):
+        profile, folder, plan = self.pin_fixture()
+        profile.update(namespace='fixture', kubeconfig='/example/config')
+        plan.update(operation='restore', target_backup='known-backup', instance='checkout-fixture',
+                    phase='prepared; no workloads changed')
+        audit = self.root / 'CHANGES.md'; audit.write_text('')
+        backend = SimpleNamespace(ROOT=self.root, restore=lambda *a: {'namespace_uid': 'new'})
+        def run(args):
+            self.assertTrue(all(isinstance(x, str) for x in args))
+            if 'namespace' in args:
+                return json.dumps({'metadata': {'uid': 'new'}})
+            return json.dumps({'items': [{'metadata': {'name': 'hermes-agent'}, 'spec': {'template':
+                {'spec': {'containers': [{'image': 'example/image:v1.0.0'}]}}}}]})
+        with patch.object(h, 'recovery_backend', return_value=backend), \
+             patch.object(h, 'trusted', side_effect=lambda p: audit if str(p) == '/CHANGES.md' else Path(p)), \
+             patch.object(h, 'recovery_guard'), patch.object(h, 'run', side_effect=run), \
+             patch.object(h, 'publish_image_pins') as publish:
+            h.recovery_worker(profile, folder, plan)
+        self.assertEqual(publish.call_args.args[2]['images']['HERMES_AGENT_IMAGE'], 'example/image:v1.0.0')
+        self.assertTrue(plan['phase'].startswith('restore-complete'))
+
     def pin_fixture(self):
         images = {key: 'example/image:v1.2.3@sha256:' + 'a' * 64 for key in
                   ['HERMES_AGENT_IMAGE', 'HERMES_WEBUI_IMAGE', 'HERMES_BROWSER_IMAGE']}

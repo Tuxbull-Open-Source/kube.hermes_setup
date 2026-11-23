@@ -105,7 +105,11 @@ class RecoveryBackend:
                                                           'HOME': '/root', 'LANG': 'C.UTF-8'})
         except (OSError, subprocess.SubprocessError):
             raise RecoveryError('Recovery command could not complete; inspect private diagnostics') from None
-        require(result.returncode == 0, 'Recovery command failed; inspect private diagnostics')
+        if result.returncode != 0:
+            error = RecoveryError('Recovery command failed; inspect protected operation diagnostics when available')
+            error.private_command_failure = {'argv': argv, 'returncode': result.returncode,
+                                             'stdout': result.stdout, 'stderr': result.stderr}
+            raise error
         return result.stdout
 
     def _get(self, kind, name=None, ns=None):
@@ -265,15 +269,39 @@ class RecoveryBackend:
                 'Helper remains; writers must not resume')
 
     def _probes(self, meta):
-        # Fixed relative paths only. Return hashes + mode/owner, never file content.
-        script = ('for d in home workspace; do found=0; '
-                  'for f in config.yaml AGENTS.md marker; do '
-                  'p=/data/$d/$f; if [ -f "$p" ] && [ ! -L "$p" ]; then '
-                  'sha256sum "$p"; stat -c "%a:%u:%g" "$p"; found=1; break; fi; '
-                  'done; [ "$found" = 1 ] || exit 2; done')
+        # Deterministic samples; never emit plaintext content or private filenames.
+        script = r'''set -eu
+set -o pipefail
+emit_sample() {
+  p="$1"
+  sum=$(sha256sum < "$p")
+  printf '%s  /data/%s/sample\n' "${sum%% *}" "$d"
+  stat -c '%a:%u:%g' "$p"
+}
+for d in home workspace; do
+  found=0
+  for f in config.yaml .env AGENTS.md marker; do
+    p="/data/$d/$f"
+    if [ -f "$p" ] && [ ! -L "$p" ]; then emit_sample "$p"; found=1; break; fi
+  done
+  if [ "$found" = 0 ]; then
+    find "/data/$d" -xdev -path "/data/$d/.velero" -prune -o -type f -print0 |
+      LC_ALL=C sort -z | (
+        IFS= read -r -d '' p || p=''
+        if [ -n "$p" ]; then
+          emit_sample "$p"
+        else
+          sum=$(sha256sum < /dev/null)
+          printf '%s  /data/%s/no-files\n' "${sum%% *}" "$d"
+          stat -c '%a:%u:%g' "/data/$d"
+        fi
+        cat > /dev/null
+      )
+  fi
+done'''
         text = self._run(self.K + ['-n', meta['namespace'], 'exec', meta['helper'], '-c', 'hold', '--', 'sh', '-c', script])
         lines = text.splitlines()
-        require(len(lines) == 4 and all(re.fullmatch(r'[0-9a-f]{64}  /data/(home|workspace)/(config.yaml|AGENTS.md|marker)', lines[i])
+        require(len(lines) == 4 and all(re.fullmatch(r'[0-9a-f]{64}  /data/(home|workspace)/(sample|no-files)', lines[i])
                                           for i in (0, 2)) and
                 all(re.fullmatch(r'[0-7]+:[0-9]+:[0-9]+', lines[i]) for i in (1, 3)), 'Sample probe unavailable')
         return text

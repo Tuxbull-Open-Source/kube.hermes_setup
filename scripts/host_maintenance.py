@@ -73,6 +73,16 @@ def save(path, obj):
     tmp.replace(path)
 
 
+def record_failure(folder, exc):
+    save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc),
+         'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+    private = getattr(exc, 'private_command_failure', None)
+    if private is None:
+        private = getattr(exc.__context__, 'private_command_failure', None)
+    if private is not None:
+        save(folder / 'command-failure.json', private)
+
+
 def output(obj):
     print(yaml.safe_dump(obj, sort_keys=False), end='')
 
@@ -402,7 +412,7 @@ def worker(p, folder, plan):
         except Exception as exc:
             plan['phase'] = ('rollout-complete; post-upgrade validation failed; inspect before retry' if plan['phase'].startswith('rollout-complete') else 'failed; inspect logs and recovery metadata before retry')
             save(folder / 'plan.json', plan)
-            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+            record_failure(folder, exc)
             try:
                 backend.diagnostics(p['namespace'], folder)
             except Exception:
@@ -487,13 +497,13 @@ def recovery_worker(p, folder, plan):
             else:
                 result = backend.restore(plan['target_backup'], p['namespace'], folder)
                 save(folder / 'restore-result.json', result)
-                require(kube(p, ['get', 'namespace', p['namespace']])['metadata']['uid'] == result['namespace_uid'],
+                require(kube(p, 'get', 'namespace', p['namespace'])['metadata']['uid'] == result['namespace_uid'],
                         'Restored namespace identity changed before configuration reconciliation')
                 image_keys = {'hermes-agent': 'HERMES_AGENT_IMAGE', 'hermes-webui': 'HERMES_WEBUI_IMAGE',
                               'hermes-browser': 'HERMES_BROWSER_IMAGE'}
                 configured = envfile(p['env_file'])
                 restored_pins = {key: configured[key] for key in image_keys.values()}
-                for deployment in kube(p, ['-n', p['namespace'], 'get', 'deployments'])['items']:
+                for deployment in kube(p, '-n', p['namespace'], 'get', 'deployments')['items']:
                     key = image_keys.get(deployment['metadata']['name'])
                     if key:
                         restored_pins[key] = deployment['spec']['template']['spec']['containers'][0]['image']
@@ -506,7 +516,7 @@ def recovery_worker(p, folder, plan):
         except Exception as exc:
             plan['phase'] = ('restore-complete; configuration reconciliation failed; inspect before retry' if plan['phase'].startswith('restore-complete') else 'failed; inspect recovery metadata before retry')
             save(folder / 'plan.json', plan)
-            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+            record_failure(folder, exc)
             try:
                 backend.diagnostics(p['namespace'], folder)
             except Exception:
@@ -567,10 +577,10 @@ def operation_progress(p, folder):
             continue
         item = {'name': name, 'stage': 'not yet available', 'volumes': []}
         try:
-            backup = kube(p, ['-n', namespace, 'get', 'backup.velero.io', name])
+            backup = kube(p, '-n', namespace, 'get', 'backup.velero.io', name)
             item['stage'] = backup.get('status', {}).get('phase', 'New')
             item['sealed'] = backup['metadata'].get('annotations', {}).get('recovery.hermes.io/sealed') == 'true'
-            volumes = kube(p, ['-n', namespace, 'get', 'podvolumebackups.velero.io'])['items']
+            volumes = kube(p, '-n', namespace, 'get', 'podvolumebackups.velero.io')['items']
             item['volumes'] = [{'volume': v['spec']['volume'], 'phase': v.get('status', {}).get('phase'),
                                 'progress': {k: v.get('status', {}).get('progress', {}).get(k)
                                              for k in ['bytesDone', 'totalBytes']}}
@@ -602,7 +612,7 @@ def dispatch(a):
             except Exception as exc:
                 plan['phase'] = ('restore-complete; configuration reconciliation failed; inspect before retry' if plan['phase'].startswith('restore-complete') else 'failed; inspect recovery metadata before retry')
                 save(folder / 'plan.json', plan)
-                save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+                record_failure(folder, exc)
                 raise
         else:
             require(a.job is None, 'Operation IDs are internal; use logs to inspect a previous run')
@@ -641,7 +651,7 @@ def dispatch(a):
         except Exception as exc:
             plan['phase'] = ('rollout-complete; post-upgrade validation failed; inspect before retry' if plan['phase'].startswith('rollout-complete') else 'failed; inspect logs and recovery metadata before retry')
             save(folder / 'plan.json', plan)
-            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+            record_failure(folder, exc)
             raise
         return 0
     guard(p, folder, plan)

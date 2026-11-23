@@ -17,7 +17,7 @@ spec.loader.exec_module(r)
 BINDING = {'checkout': '/example/checkout', 'namespace': 'example-app', 'namespace_uid': 'ns-original', 'cluster_uid': 'cluster-original',
            'pvc_uids': {'hermes-home': 'home-original', 'hermes-workspace': 'workspace-original'},
            'kubeconfig': '/protected/kubeconfig', 'velero': {'storage_location': 'primary'}}
-PROBES = 'a' * 64 + '  /data/home/config.yaml\n600:10000:10000\n' + 'b' * 64 + '  /data/workspace/AGENTS.md\n644:10000:10000\n'
+PROBES = 'a' * 64 + '  /data/home/sample\n600:10000:10000\n' + 'b' * 64 + '  /data/workspace/sample\n644:10000:10000\n'
 
 
 def obj(name, uid=None, spec=None, status=None):
@@ -183,6 +183,26 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(r.RecoveryError):
             self.b._scale(meta, True)
         self.assertEqual(self.b.deps[0]['spec']['replicas'], 3)
+
+    def test_probe_shell_supports_arbitrary_names_and_empty_workspace(self):
+        volumes = self.folder / 'volumes'
+        for name in ('home', 'workspace'):
+            (volumes / name).mkdir(parents=True)
+        (volumes / 'home/.env').write_text('synthetic-private-content')
+        private = volumes / 'workspace/personal\nname.txt'
+        private.write_text('synthetic-workspace-content')
+        def shell(argv, *args, **kwargs):
+            script = argv[-1].replace('/data/', str(volumes) + '/')
+            done = subprocess.run(['bash', '-c', script], capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return done.stdout.replace(str(volumes) + '/', '/data/')
+        with patch.object(self.b, '_run', side_effect=shell):
+            text = self.b._probes({'namespace': self.ns, 'helper': 'helper'})
+            self.assertNotIn('private-content', text)
+            self.assertNotIn('personal', text)
+            private.unlink()
+            empty = self.b._probes({'namespace': self.ns, 'helper': 'helper'})
+            self.assertIn('/data/workspace/no-files', empty)
 
     def test_explicit_cli_binding(self):
         for cmd in (self.b.K, self.b.V):
