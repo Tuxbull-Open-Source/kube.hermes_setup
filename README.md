@@ -1,6 +1,10 @@
 # kube.hermes_setup
 
-Production-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/nousresearch/hermes-agent) stack:
+> [!WARNING]
+> **Proof of concept — lab and agent experimentation only. Never use in production environments.**
+> This project is intended for rapid deployment and evaluation of setups, not as a turnkey production platform. Upgrading an existing, customized Hermes Agent installation can require substantial experience with Kubernetes and Hermes Agent. Do not use this project unless you are willing to learn how the underlying system works.
+
+Lab-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/nousresearch/hermes-agent) stack:
 
 - **Hermes Agent** — mandatory API/gateway runtime
 - **Hermes Dashboard** — optional administrative dashboard
@@ -8,6 +12,11 @@ Production-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github
 - **Browserless Chromium** — optional internal browser/CDP backend
 
 The repository is template-driven. Deployment-specific configuration, credentials, OAuth state, kubeconfigs, rendered artifacts, and backups must remain outside Git.
+
+**Installer candidate: 2.8.0** (see [`VERSION`](VERSION) and the
+[release notes](CHANGELOG.md#v280---unreleased)). PR #127 is still under review;
+this is not a published release. Installer versions are separate from application
+image versions, and updating this checkout does not upgrade a running instance.
 
 ## Requirements
 
@@ -25,7 +34,7 @@ See [recovery ownership](docs/operations.md#backup-and-recovery-operator-owned-v
 ## Quick start
 
 ```bash
-git clone https://github.com/Bitbull-Ideas/kube.hermes_setup.git
+git clone https://github.com/Tuxbull-Open-Source/kube.hermes_setup.git
 cd kube.hermes_setup
 ./configure.sh --no-install
 ```
@@ -38,6 +47,89 @@ For production use, read the security, operations, and QA guides before continui
 ./install.sh
 ./doctor.sh
 ```
+
+## Existing installations: maintenance and upgrade
+
+For an existing 2.7.8 or 2.7.9 installation, **do not rerun the wizard** to adopt
+this feature. Retain the private configuration and recovery tools. The canonical
+implementation is `maintain.sh`; the literal `maintenance.sh` is its compatibility
+launcher. Bare `upgrade` now refuses to act instead of merely restarting images.
+
+To review the **unmerged 2.8.0 candidate**, use a separate checkout (choose an
+unused directory); pulling `main` does not obtain this PR:
+
+```bash
+git clone --branch feat/explicit-maintenance-upgrade --single-branch \
+  https://github.com/Tuxbull-Open-Source/kube.hermes_setup.git kube.hermes_setup-review
+cd kube.hermes_setup-review
+git log -1 --oneline
+./maintenance.sh --help
+```
+
+Review the exact PR head before provisioning it. This only obtains source and
+shows help: it installs no host helper and changes no cluster resources. After
+merge/release, use the maintainer-approved revision instead of assuming this
+review branch is a published tag.
+
+An administrator must first provision the [root-owned helper, source snapshot,
+checkout binding and existing recovery backend](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
+Then run as the ordinary operator with existing sudo rights, on that host:
+
+```bash
+./maintenance.sh status
+./maintenance.sh plan --latest-stable
+# Review exact image digests, source revision and compatibility before continuing.
+# Replace PLAN_ID with the full checkout-bound ID returned above.
+./maintenance.sh logs PLAN_ID
+# Explicit maintenance window: cold backup and rollout cause downtime.
+./maintenance.sh upgrade PLAN_ID
+./maintenance.sh logs PLAN_ID
+./maintenance.sh status
+```
+
+`status` reports resource availability, not application acceptance. `logs` reports
+durable phase, backup, systemd unit and protected log location; it is not a log-tail
+command. The host service survives loss of the terminal or Agent session, **not**
+loss of the host. A launch result means started, not completed.
+
+One checkout manages exactly one namespace from its existing `hermes.env` or
+`current_config/hermes.env`. Host maintenance rejects missing or ambiguous files
+and any mismatch with the protected snapshot. It never discovers another namespace
+or bypasses an incorrect `hermes` default. Correct the existing configuration after
+review; do not introduce a selector or alternate maintenance profile. The internal
+root-owned binding seals namespace/PVC identities, authentication, configuration,
+protected kubeconfig and reviewed source. No new sudoers rule is needed.
+
+`plan` (or `render`) creates protected host artifacts without cluster writes.
+`--latest-stable` resolves publisher releases and registry digests **at preparation**;
+plain `plan` verifies configured pins. Neither changes running versions nor proves
+compatibility. Execute the exact reviewed sealed plan; source/configuration/live
+state drift requires a new plan. The helper imports privileged resolver/recovery
+Python code from reviewed root-owned paths; these are trusted code, not sandboxed
+plugins. See [architecture and trust boundaries](docs/host-maintenance.md).
+
+The image-upgrade guard preserves ordered `command`/`args` and the complete
+container `securityContext` for both regular and init containers. Empty/missing
+command and argument lists mean image defaults; empty/missing security contexts
+mean no settings. Explicit security fields, including admission-injected fields,
+are never discarded to force a match: reconcile and qualify changed behavior
+separately. This is a safety-critical-field guard, not a byte-for-byte Pod comparison.
+Isolated-test installs reject pre-existing Ingress/Traefik exposure and rendered
+vendor NetworkPolicy names before cluster writes; they never auto-delete them.
+Unrelated policies remain untouched and must be independently reviewed and tested
+for additive allows. See [isolation limits](docs/host-maintenance.md#proportionate-qualification-and-isolated-rehearsal).
+
+**Recovery warning:** upgrade uses a fresh eligible operator-owned Velero cold
+backup. There is no automatic rollback, data rewind, or blind retry after failure.
+An image downgrade alone does not undo data migrations. Inspect protected evidence
+and the exact backup before an operator-authorized restore; restoring can discard
+later writes. Legacy `backup`, `restore`, and `extract` are no longer provided by
+this installer; keep historical tools/archives under the operator retention policy.
+
+The [2.8.0 qualification record](CHANGELOG.md#v280---unreleased) distinguishes the
+runtime-tested frozen bundle from newer prepared-only targets. Perform application
+login, API, browser/CDP and logical-data acceptance after rollout; Ready Pods alone
+are insufficient.
 
 ## Bootstrap profiles
 
@@ -64,6 +156,7 @@ Persistence does not mean every path is immutable: installer-managed runtimes ar
 
 | Guide | Purpose |
 |---|---|
+| [`docs/host-maintenance.md`](docs/host-maintenance.md) | Explicit instance enrollment, sealed stable-image plans, privileged host service, logs and recovery boundaries |
 | [`docs/operations.md`](docs/operations.md) | Installation lifecycle, maintenance, upgrades, operator-owned Velero recovery, credentials, bootstrap behavior, and persistent tooling |
 | [`docs/persistent-software.md`](docs/persistent-software.md) | Persistent Python addons, Node/npm/npx runtime, caches, project dependencies, custom-image boundary, upgrades, and backup behavior |
 | [`docs/security.md`](docs/security.md) | Secrets, authentication, TLS, container security, Browserless/CDP controls, and backup protection |
@@ -86,7 +179,8 @@ Additional references:
 |---|---|
 | `./configure.sh` | Create or intentionally regenerate local configuration |
 | `./install.sh` | Validate, render, apply, and verify the stack |
-| `./maintain.sh` | Inspect and maintain an installation |
+| `./maintain.sh` | Canonical maintenance implementation; checkout-bound upgrades or legacy ENV_FILE operations |
+| `./maintenance.sh --help` | Compatibility launcher: host status, plan/render, upgrade PLAN, logs PLAN |
 | `./doctor.sh` | Run deployment diagnostics |
 
 ## Acknowledgements

@@ -6,7 +6,7 @@ Public `AGENTS.md` guidance describes this kind of file as a "README for agents"
 
 ## Repository purpose
 
-This repository packages a production-oriented but lab-friendly Kubernetes/K3s installer for a multi-container Hermes Agent stack:
+This repository packages a proof-of-concept Kubernetes/K3s installer for lab use and agent experimentation only. Never use it in production environments. It deploys a multi-container Hermes Agent stack:
 
 - `hermes-agent` — Hermes Gateway/API runtime from `nousresearch/hermes-agent`.
 - `hermes-dashboard` — Hermes Dashboard from the same Agent image.

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Enforce the supported v2.7.9 release shape and reject experimental PoC artifacts.
+# Enforce the supported v2.8.0 candidate shape and reject experimental PoC artifacts.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-[[ "$(<VERSION)" == 2.7.9 ]]
+[[ "$(<VERSION)" == 2.8.0 ]]
+grep -Fq '## [v2.8.0] - Unreleased' CHANGELOG.md
+grep -Fq '**Installer candidate: 2.8.0**' README.md
+grep -Fq 'docs/host-maintenance.md' README.md
 grep -Fq '## [v2.7.9] - 2026-10-31' CHANGELOG.md
 grep -Fq '## [v2.7.8] - 2026-10-31' CHANGELOG.md
 grep -Fq '## [v2.7.7] - 2026-10-31' CHANGELOG.md
@@ -67,4 +70,4 @@ grep -Fq 'Dashboard ID-token lifetime is provider-controlled' docs/sso-integrati
 grep -Fq 'provider currently exposes no ID-token' docs/sso-integration.md
 ! grep -Fq 'WebUI and Dashboard application sessions expire after 12 hours' docs/sso-integration.md
 
-printf 'v2.7.9 final-state contract passed\n'
+printf 'v2.8.0 candidate final-state contract passed\n'

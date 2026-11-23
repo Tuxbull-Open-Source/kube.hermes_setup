@@ -35,6 +35,17 @@ source "$TMP_DIR/profile-config/hermes.env"
 [[ "$HERMES_BOOTSTRAP_PROFILE" == personal-assistant ]]
 [[ "$HERMES_SSH_SETUP" == true ]]
 
+# Maintenance alignment must survive saved-answer replay without enabling bootstrap.
+python3 - "$TMP_DIR/profile-answers" "$TMP_DIR/disabled-answers" <<'PY'
+from pathlib import Path
+import sys
+lines = Path(sys.argv[1]).read_text().splitlines()
+Path(sys.argv[2]).write_text('\n'.join('HERMES_BOOTSTRAP_MODE=disabled' if line.startswith('HERMES_BOOTSTRAP_MODE=') else line for line in lines) + '\n')
+PY
+"$ROOT_DIR/configure.sh" --no-install --from-answers \
+  --config-dir "$TMP_DIR/disabled-config" --answers-file "$TMP_DIR/disabled-answers" > "$TMP_DIR/disabled-output"
+grep -qx 'HERMES_BOOTSTRAP_MODE=disabled' "$TMP_DIR/disabled-config/hermes.env"
+
 # Verify operational-script environment-file fallback and process-variable precedence.
 # Operational scripts prefer an existing root hermes.env, then discover the
 # wizard-generated current_config/hermes.env when no root file exists.
