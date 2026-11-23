@@ -106,6 +106,14 @@ matrix tests were exercised. These are mocked/local tests except for the live
 steps explicitly listed above. CI runs the non-cluster contracts; it does not
 claim to run this disposable-cluster rehearsal.
 
+The first hosted CI run exposed a fixture precondition hidden by the local umask:
+its restore operation directory had not been explicitly created with mode 0700.
+The production coordinator already creates that private directory. The fixture now
+models that contract explicitly, and a negative test still rejects mode 0755
+without silently changing permissions. All contract suites are exercised with
+both umask 022 and 077. This follow-up changes tests/CI/documentation, not the
+operational scripts qualified by the live rehearsal.
+
 ## Limits and production acceptance
 
 - This is synthetic same-cluster recovery, not a production restore drill,

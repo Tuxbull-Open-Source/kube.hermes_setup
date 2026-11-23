@@ -11,11 +11,15 @@ permissions:
 jobs:
   contracts:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        umask: ['022', '077']
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.12'
       - run: python -m pip install PyYAML==6.0.3
@@ -23,6 +27,7 @@ jobs:
         run: python tests/private-artifact-boundary.py
       - name: Mocked contracts only; no cluster access
         run: |
+          umask ${{ matrix.umask }}
           python tests/host-provisioning.py
           python tests/host-maintenance.py
           python tests/host-recovery.py

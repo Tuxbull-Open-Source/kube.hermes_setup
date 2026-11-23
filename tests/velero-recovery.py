@@ -154,8 +154,20 @@ class RecoveryTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.folder = Path(self.tmp.name)
+        # Match the coordinator contract: it creates this private operation root
+        # before diagnostics creates nested directories. Do not rely on umask.
+        (self.folder / 'restore').mkdir(mode=0o700)
         self.b = Fake()
         self.ns = BINDING['namespace']
+
+    def test_insecure_operation_directory_still_rejected(self):
+        unsafe = self.folder / 'unsafe'
+        unsafe.mkdir(mode=0o700)
+        unsafe.chmod(0o755)
+        with self.assertRaisesRegex(r.RecoveryError, 'Operation directory must be private'):
+            r.save(unsafe / 'state.json', {'fixture': True})
+        self.assertFalse((unsafe / 'state.json').exists())
+        self.assertEqual(unsafe.stat().st_mode & 0o777, 0o755)
 
     def backup(self):
         return self.b.backup(self.ns, self.folder / 'backup')
