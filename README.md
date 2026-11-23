@@ -148,7 +148,10 @@ conversion or deletion occurs. Provisioning and recovery logic are versioned in
 this repository; installation-specific config, bindings and recovery data are not.
 
 The earlier [2.8.0 qualification record](CHANGELOG.md#v280---unreleased) does not
-qualify the new 2.9.0 recovery machinery. Perform application
+qualify the new 2.9.0 recovery machinery. The
+[repository-owned recovery qualification](docs/qa-repository-recovery.md) records
+its real native backup, restore and image-upgrade rehearsal and remaining limits.
+Perform application
 login, API, browser/CDP and logical-data acceptance after rollout; Ready Pods alone
 are insufficient.
 
