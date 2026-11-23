@@ -82,6 +82,8 @@ class Fake(r.RecoveryBackend):
         return []
 
     def _run(self, argv, data=None, timeout=90):
+        if 'api-resources' in argv:
+            return 'namespaces\npersistentvolumes\ncustomresourcedefinitions.apiextensions.k8s.io\n'
         self.actions.append(list(argv))
         if 'scale' in argv:
             name = next(a.split('/', 1)[1] for a in argv if a.startswith('deployment/'))
@@ -342,7 +344,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertNotIn('persistentvolumes', restore['spec']['excludedResources'])
         self.assertNotIn('persistentvolumeclaims', restore['spec']['excludedResources'])
         self.assertEqual(self.b.backups[name]['spec']['includedClusterScopedResources'], ['namespaces'])
-        self.assertEqual(self.b.backups[name]['spec']['excludedClusterScopedResources'], ['persistentvolumes'])
+        self.assertEqual(set(self.b.backups[name]['spec']['excludedClusterScopedResources']),
+                         {'persistentvolumes', 'customresourcedefinitions.apiextensions.k8s.io'})
         modifier = next(o for o in self.b.objects if o['kind'] == 'ConfigMap')
         rules = json.loads(modifier['data']['rules.yaml'])['resourceModifierRules']
         self.assertIsNone(json.loads(rules[0]['mergePatches'][0]['patchData'])['spec']['volumeName'])

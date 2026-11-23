@@ -231,7 +231,10 @@ class RecoveryBackend:
             require(ref.get('uid') == pvc['metadata']['uid'] and ref.get('namespace') == ns,
                     'Source PV claim identity mismatch')
             source_pvs[pvc['metadata']['name']] = spec['volumeName']
-        return {'version': 2, 'instance': self.instance, 'namespace': ns, 'namespaceUID': self.binding['namespace_uid'],
+        cluster_excluded = sorted(set(self._run(self.K + ['api-resources', '--namespaced=false', '--verbs=list', '-o', 'name']).split()) - {'namespaces'})
+        require({'persistentvolumes', 'customresourcedefinitions.apiextensions.k8s.io'} <= set(cluster_excluded),
+                'Complete cluster resource discovery required')
+        return {'version': 2, 'excludedClusterResources': cluster_excluded, 'instance': self.instance, 'namespace': ns, 'namespaceUID': self.binding['namespace_uid'],
                 'clusterUID': self.binding['cluster_uid'], 'pvcs': dict(self.binding['pvc_uids']),
                 'namespaceMetadataHash': self._namespace_contract(self._get('namespace', ns)),
                 'sourcePVs': source_pvs,
@@ -416,7 +419,7 @@ done'''
                                        'annotations': {KEY: json.dumps(meta, separators=(',', ':'))}},
                           'spec': {'includedNamespaces': [ns],
                                    'includedClusterScopedResources': ['namespaces'],
-                                   'excludedClusterScopedResources': ['persistentvolumes'],
+                                   'excludedClusterScopedResources': meta['excludedClusterResources'],
                                    'includedNamespaceScopedResources': ['*'],
                                    'excludedNamespaceScopedResources': [x for x in EXCLUDED if x != 'persistentvolumes'],
                                    'snapshotVolumes': False,
@@ -462,7 +465,9 @@ done'''
                     sp.get('includeClusterResources') is None and not sp.get('includedResources') and
                     not sp.get('excludedResources') and not sp.get('labelSelector') and not sp.get('orLabelSelectors') and
                     sp.get('includedClusterScopedResources') == ['namespaces'] and
-                    sp.get('excludedClusterScopedResources') == ['persistentvolumes'] and
+                    sp.get('excludedClusterScopedResources') == m.get('excludedClusterResources') and
+                    'namespaces' not in m.get('excludedClusterResources', []) and
+                    {'persistentvolumes', 'customresourcedefinitions.apiextensions.k8s.io'} <= set(m.get('excludedClusterResources', [])) and
                     sp.get('includedNamespaceScopedResources') == ['*'] and
                     sp.get('defaultVolumesToFsBackup') is False and sp.get('snapshotVolumes') is False and
                     sp.get('storageLocation') == self.location and
