@@ -11,6 +11,11 @@ legacy `/usr/local/libexec/hermes-maintenance.py`: existing version-1 checkouts,
 bindings and independent recovery backends retain their original entrypoint.
 Only the explicitly enrolled checkout is migrated. This side-by-side arrangement
 prevents a new controller's schema guard from disabling unrelated legacy controls.
+The launcher checks the installed provisioner's read-only `--protocol-version`
+capability before enrollment. An older provisioner must first be replaced by an
+administrator from the reviewed archive: letting it enroll once to update itself
+would still use its old helper destination for that first transaction. An unknown
+protocol fails before enrollment rather than silently replacing the legacy helper.
 
 ## Prerequisites and boundaries
 

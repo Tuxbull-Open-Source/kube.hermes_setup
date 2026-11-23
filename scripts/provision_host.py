@@ -397,6 +397,11 @@ def enroll(checkout, commit, kubeconfig=None):
 
 
 def main(argv=None):
+    # Read-only capability probe must precede revision parsing and host writes.
+    actual = sys.argv[1:] if argv is None else argv
+    if actual == ['--protocol-version']:
+        print('hermes-enrollment-v2-isolated-helper')
+        return 0
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--checkout')

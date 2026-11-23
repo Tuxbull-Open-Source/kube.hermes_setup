@@ -49,6 +49,16 @@ def archive(extra=None, commit=COMMIT):
 
 
 class PureTests(unittest.TestCase):
+    def test_protocol_probe_is_readonly_and_matches_isolated_helper(self):
+        import contextlib
+        import io
+        output = io.StringIO()
+        with patch.object(p, 'enroll') as enroll, patch.object(p, 'stage') as stage, contextlib.redirect_stdout(output):
+            self.assertEqual(p.main(['--protocol-version']), 0)
+        self.assertEqual(output.getvalue().strip(), 'hermes-enrollment-v2-isolated-helper')
+        self.assertEqual(p.HELPER.name, 'hermes-maintenance-v2.py')
+        enroll.assert_not_called(); stage.assert_not_called()
+
     def test_revision_rejects_unpinned_or_injected(self):
         for value in ('main', 'a' * 39, 'A' * 40, '--help', '../' + COMMIT):
             with self.subTest(value=value), self.assertRaises(p.Error):
