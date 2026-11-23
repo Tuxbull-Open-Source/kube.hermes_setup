@@ -57,6 +57,11 @@ try:
 except (OSError, ValueError):
     sys.exit("Provisioner or parents are not protected root-owned paths; refusing sudo.")
 '
+if ! protocol="$(/usr/bin/sudo "$HELPER" --protocol-version 2>/dev/null)" ||
+   [[ "$protocol" != hermes-enrollment-v2-isolated-helper ]]; then
+  printf 'Cannot verify isolated-helper provisioning support. Have an administrator install the reviewed provisioner and verify sudo access; no enrollment was attempted.\n' >&2
+  exit 2
+fi
 args=(--checkout "$ROOT_DIR" --revision "$revision")
 [[ -z "$kubeconfig" ]] || args+=(--kubeconfig "$kubeconfig")
 exec /usr/bin/sudo "$HELPER" "${args[@]}"

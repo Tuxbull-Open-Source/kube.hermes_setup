@@ -41,7 +41,7 @@ import tempfile
 import uuid
 
 PROVISION = Path('/usr/local/libexec/hermes-provision-host.py')
-HELPER = Path('/usr/local/libexec/hermes-maintenance.py')
+HELPER = Path('/usr/local/libexec/hermes-maintenance-v2.py')
 SOURCES = Path('/usr/local/lib/hermes-maintenance')
 CONFIG = Path('/etc/hermes-maintenance')
 STATE = Path('/srv/backup/hermes-maintenance')
@@ -397,6 +397,11 @@ def enroll(checkout, commit, kubeconfig=None):
 
 
 def main(argv=None):
+    # Read-only capability probe must precede revision parsing and host writes.
+    actual = sys.argv[1:] if argv is None else argv
+    if actual == ['--protocol-version']:
+        print('hermes-enrollment-v2-isolated-helper')
+        return 0
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--revision', required=True)
     parser.add_argument('--checkout')
