@@ -183,8 +183,8 @@ The backend freezes the recorded replica map, waits for writers to terminate,
 mounts both claims read-only in a credential-free helper, captures sampled hashes
 and creates a namespace-scoped Velero FSB backup. It requires exactly two Completed
 Kopia records with matching helper/PVC identities and checks that the cold samples
-did not change. It removes the helper and resumes the original replicas even on
-failure. A completion seal is added only after successful resume. If helper
+did not change. It removes the helper and attempts to resume the original replicas
+after a normal backup, including failure paths where the safety gates permit it. A completion seal is added only after successful resume. If helper
 absence or safe resume cannot be established, writers remain stopped and private
 recovery metadata identifies the interrupted operation.
 
@@ -198,8 +198,13 @@ adopted. Listings do not claim application-level restore testing.
 
 `restore EXACT_BACKUP_NAME --accept-data-loss` is destructive and loses writes
 since that recovery point. It first validates the exact name, captures diagnostics
-and creates a fresh eligible safety backup. It then stops writers, deletes the
-bound namespace, restores namespaced resources with Deployment replicas at zero,
+and creates a fresh **safety-only** checkpoint with writers stopped. This captures
+both claims and resources even when the current image cannot start; it does not
+require that failed application to resume. The checkpoint is unsealed for normal
+eligibility and cannot be selected as a normal recovery point. Failed capture,
+coverage, archive checks or helper cleanup prevent namespace deletion. The exact
+selected good backup is rechecked, and unexpected restarted writers block deletion.
+The worker then deletes the bound namespace, restores namespaced resources with Deployment replicas at zero,
 excludes source PV manifests and uses Velero resource modifiers for fresh dynamic
 PVC binding. PVR coverage, new identities and sampled hash/mode/owner equality
 must pass before application replicas resume. No automatic destructive retry occurs.

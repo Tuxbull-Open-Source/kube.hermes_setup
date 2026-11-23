@@ -141,6 +141,29 @@ its inode, timestamp and permissions and preserve an unrelated legacy binding.
 This follow-up changes controller placement/handshake, not the tested recovery
 algorithm; it does not authorize changing existing production legacy controls.
 
+## Failed-workload recovery release qualification
+
+Executable revision `c8764ec9389efa1fe75f8abb4c0b5675fe70ab17` was exercised through
+the ordinary operator entrypoint in the disposable fixture. A fresh normal cold
+checkpoint completed with both filesystem volumes and its successful-resume seal.
+After that point, only synthetic SQLite/workspace data was changed and the Agent
+Deployment was assigned an unavailable image.
+
+Native `restore EXACT_BACKUP --accept-data-loss` then captured a complete two-volume
+safety-only checkpoint without attempting to start the failing current image. The
+selected good checkpoint restored successfully, with both PVRs, restored image pins
+and new identities. Actual SQLite integrity and the original logical row/workspace
+marker were checked afterward, as were authenticated API HTTP 200 and a real
+Chromium CDP request. Reenrollment succeeded and all four Deployments were ready.
+Listing accepted the good checkpoint and rejected the completed, unsealed
+safety-only checkpoint as a normal restore target.
+
+This qualifies an unready application with its owned namespace, claims and keys
+still present. It does not qualify missing/foreign namespace adoption, arbitrary
+node loss, every historical recovery point or external provider/MCP behavior.
+Safety checkpoints and operation evidence remain private and retained for review;
+no teardown or production rollout is implied by this release test.
+
 ## Vendor references
 
 - [Velero restore reference](https://velero.io/docs/v1.18/restore-reference/)

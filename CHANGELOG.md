@@ -33,6 +33,13 @@ opening a release PR neither publishes a tag nor updates deployed workloads.
 
 ### Fixed
 
+- Recovery of a known-good point no longer requires an unhealthy current image
+  to start first. The pre-restore safety-only checkpoint captures both claims and
+  resources, preserves failure evidence and is deliberately not a normal eligible
+  recovery point. Failed capture/helper cleanup or restarted writers block deletion.
+- The release fault drill verified original SQLite/workspace data, API/CDP and
+  reenrollment through the native CLI; see the scoped qualification record.
+
 - Host-maintenance planning now accepts a retained `hermes-bootstrap-archive`
   Secret. Sealed maintenance runs preserve it without creating, deleting,
   extracting or replaying it. Existing Secret drift/preservation checks remain
