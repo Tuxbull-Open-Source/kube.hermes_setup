@@ -465,13 +465,15 @@ done'''
                     sp.get('includeClusterResources') is None and not sp.get('includedResources') and
                     not sp.get('excludedResources') and not sp.get('labelSelector') and not sp.get('orLabelSelectors') and
                     sp.get('includedClusterScopedResources') == ['namespaces'] and
-                    sp.get('excludedClusterScopedResources') == m.get('excludedClusterResources') and
+                    set(m.get('excludedClusterResources', [])) <= set(sp.get('excludedClusterScopedResources', [])) <=
+                    set(m.get('excludedClusterResources', [])) | {'volumesnapshotcontents.snapshot.storage.k8s.io'} and
                     'namespaces' not in m.get('excludedClusterResources', []) and
                     {'persistentvolumes', 'customresourcedefinitions.apiextensions.k8s.io'} <= set(m.get('excludedClusterResources', [])) and
                     sp.get('includedNamespaceScopedResources') == ['*'] and
                     sp.get('defaultVolumesToFsBackup') is False and sp.get('snapshotVolumes') is False and
                     sp.get('storageLocation') == self.location and
-                    set(sp.get('excludedNamespaceScopedResources', [])) == set(EXCLUDED) - {'persistentvolumes'},
+                    set(EXCLUDED) - {'persistentvolumes'} <= set(sp.get('excludedNamespaceScopedResources', [])) <=
+                    (set(EXCLUDED) - {'persistentvolumes'}) | {'volumesnapshots.snapshot.storage.k8s.io'},
                     'Backup scope differs from cold contract')
             require(s.get('phase') == 'Completed' and not s.get('errors') and not s.get('warnings') and
                     dt.datetime.fromisoformat(s['expiration'].replace('Z', '+00:00')) > now(), 'Backup incomplete or expired')

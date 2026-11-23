@@ -324,6 +324,16 @@ class RecoveryTests(unittest.TestCase):
             self.b.backups[name] = b
             with self.subTest(mode=mode), self.assertRaises(r.RecoveryError): self.b.eligible(name, self.ns)
 
+    def test_native_csi_default_exclusions_are_narrowly_allowed(self):
+        name, _ = self.backup()
+        spec = self.b.backups[name]['spec']
+        spec['excludedClusterScopedResources'].append('volumesnapshotcontents.snapshot.storage.k8s.io')
+        spec['excludedNamespaceScopedResources'].append('volumesnapshots.snapshot.storage.k8s.io')
+        self.b.eligible(name, self.ns)
+        spec['excludedNamespaceScopedResources'].append('secrets')
+        with self.assertRaises(r.RecoveryError):
+            self.b.eligible(name, self.ns)
+
     def test_safe_listing_does_not_export_metadata(self):
         self.backup()
         result = self.b.list_backups(self.ns)
