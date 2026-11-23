@@ -385,11 +385,14 @@ done'''
         if s.get('warnings'):
             require(kind == 'restores' and meta is not None, 'Unclassified Velero warnings')
             logs = self._run(self.V + ['restore', 'logs', name], timeout=120)
-            warnings = [line for line in logs.splitlines() if 'level=warning' in line]
+            # Controller result records correspond to status.warnings. Item-action
+            # log chatter (e.g. endpoint annotations) and duplicate logs do not.
+            warnings = [line for line in logs.splitlines() if 'level=warning' in line and
+                        'pkg/controller/restore_controller.go:' in line]
             expected = ['/resources/persistentvolumes/cluster/' + pv + '.json: no such file or directory'
                         for pv in meta['sourcePVs'].values()]
             # Never allow arbitrary warning counts/content. Root CA regeneration is benign.
-            require(bool(warnings) and all(any(token in line for token in expected) or
+            require(len(warnings) == s['warnings'] and all(any(token in line for token in expected) or
                     ('kube-root-ca.crt' in line and 'already exists' in line and 'in-cluster version is different' in line)
                     for line in warnings) and s['warnings'] in (2, 3) and
                     all(any(token in line for line in warnings) for token in expected), 'Unclassified restore warnings')

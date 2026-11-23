@@ -334,6 +334,21 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaises(r.RecoveryError):
             self.b.eligible(name, self.ns)
 
+    def test_restore_warning_results_not_endpoint_log_chatter(self):
+        meta = self.b.preflight(self.ns)
+        self.b.restores['restore'] = obj('restore', status={'phase': 'Completed', 'warnings': 3})
+        lines = ['level=warning msg="stat /resources/persistentvolumes/cluster/' + p +
+                 '.json: no such file or directory" logSource="pkg/controller/restore_controller.go:616"'
+                 for p in meta['sourcePVs'].values()]
+        lines.append('level=warning msg="kube-root-ca.crt already exists; in-cluster version is different" logSource="pkg/controller/restore_controller.go:620"')
+        lines.append('level=warning msg="No annotations found, using restore spec setting: false" logSource="pkg/restore/restore.go:2630"')
+        with patch.object(self.b, '_run', return_value='\n'.join(lines)):
+            self.b._velero_wait('restores', 'restore', meta)
+        lines[-1] = 'level=warning msg="unexpected warning" logSource="pkg/controller/restore_controller.go:620"'
+        with patch.object(self.b, '_run', return_value='\n'.join(lines)):
+            with self.assertRaises(r.RecoveryError):
+                self.b._velero_wait('restores', 'restore', meta)
+
     def test_safe_listing_does_not_export_metadata(self):
         self.backup()
         result = self.b.list_backups(self.ns)
