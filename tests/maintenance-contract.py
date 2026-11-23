@@ -35,7 +35,7 @@ class MaintenanceContract(unittest.TestCase):
     def test_removed_commands_rejected_without_cluster_or_file_changes(self):
         archive = self.directory / "existing.age"
         archive.write_bytes(b"operator-owned archive")
-        for command in ("backup", "restore", "extract"):
+        for command in ("extract",):
             for options in ([], ["--data-only"], ["--full", "--dry-run"], ["--password-stdin"]):
                 with self.subTest(command=command, options=options):
                     result = self.run_cli(command, str(archive), *options)
@@ -47,14 +47,25 @@ class MaintenanceContract(unittest.TestCase):
     def test_help_has_only_supported_commands(self):
         result = self.run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for command in ("backup", "restore", "extract"):
+        for command in ("extract",):
             self.assertNotIn(f"./maintain.sh {command}", result.stdout)
         for option in ("--data-only", "--password-file", "--password-stdin", "--full", "--component"):
             self.assertNotIn(option, result.stdout)
-        for command in ("status", "restart", "upgrade", "show-passwords", "rotate-passwords",
+        for command in ("status", "restart", "upgrade", "backup", "list-backups", "restore", "show-passwords", "rotate-passwords",
                         "rotate-browser-token", "reconcile-api-key", "reconcile-browser-token"):
             self.assertIn(f"./maintain.sh {command}", result.stdout)
         self.assertFalse(self.calls.exists())
+
+    def test_native_recovery_rejects_legacy_options_before_host_access(self):
+        import sys
+        for args in [('backup', '--full'), ('backup', '--data-only'),
+                     ('restore', 'example-backup'),
+                     ('restore', 'example-backup', '--password-stdin')]:
+            result = subprocess.run([sys.executable, str(ROOT / 'scripts/host_maintenance.py'),
+                                     '--checkout', str(self.directory), *args],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertFalse(self.calls.exists())
 
     def test_status_restart_preserve_namespace_and_enabled_set(self):
         self.env.update(HERMES_DASHBOARD_ENABLED="false", HERMES_WEBUI_ENABLED="false",

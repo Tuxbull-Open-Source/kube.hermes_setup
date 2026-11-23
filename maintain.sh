@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # One checkout owns one configured namespace. Never select a second target.
 case "${1:-}" in
   --instance) printf 'Instance selection is not supported; use this checkout configuration.\n' >&2; exit 2 ;;
-  upgrade|plan|render|logs)
+  upgrade|plan|render|logs|backup|list-backups|restore)
     [[ "${1:-}" != upgrade || $# -eq 2 ]] || { printf 'Usage: maintenance.sh upgrade PLAN\nNo rollout was started.\n' >&2; exit 2; }
     [[ -x /usr/local/libexec/hermes-maintenance.py ]] || { printf 'Host helper not provisioned for this checkout. No rollout was started.\n' >&2; exit 2; }
     [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
@@ -128,7 +128,21 @@ Usage:
   ./maintain.sh plan [--latest-stable]
   ./maintain.sh render [--latest-stable]
   ./maintain.sh upgrade PLAN
-  ./maintain.sh logs PLAN
+  ./maintain.sh logs PLAN_OR_OPERATION
+  ./maintain.sh backup
+  ./maintain.sh list-backups
+  ./maintain.sh restore BACKUP --accept-data-loss
+
+Host maintenance/recovery:
+  Provision this checkout using the repository's reviewed host setup first.
+  Requires existing Kubernetes/Velero, Python with PyYAML, and systemd/sudo.
+  backup: cold PVC backup with temporary application downtime; restores replicas.
+  restore: safety backup, then destructive replacement of this instance's data.
+  list-backups/status: read-only; output never displays credential values.
+  Recovery and upgrades run independently under systemd. Inspect logs OPERATION.
+  No namespace selector or ENV_FILE override; one checkout owns one instance.
+
+Credential operations (separate, explicit):
   ./maintain.sh reconcile-api-key --source secret
   ./maintain.sh reconcile-browser-token --source secret
   ./maintain.sh show-passwords

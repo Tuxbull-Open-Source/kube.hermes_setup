@@ -16,6 +16,9 @@ import re
 import shlex
 import subprocess
 import sys
+sys.dont_write_bytecode = True  # Immutable reviewed snapshots must never gain cache files.
+import contextlib
+import stat as filemode
 import uuid
 import yaml
 
@@ -125,8 +128,22 @@ def profile(checkout):
     path, values = source_config(checkout)
     p = json.loads(trusted(CONFIG / (binding_id(checkout) + '.json')).read_text())
     require(p['checkout'] == str(checkout) and p['config_path'] == str(path), 'Protected binding belongs to another checkout/configuration')
-    for key in ['source', 'env_file', 'recovery_backend', 'kubeconfig']:
+    require(p.get('binding_version') == 2 and 'recovery_backend' not in p,
+            'Legacy external recovery binding; re-enroll this checkout with repository-owned recovery')
+    for key in ['source', 'env_file', 'kubeconfig']:
         trusted(p[key])
+    trusted(Path(p['source']) / 'scripts/velero_recovery.py')
+    require(hashlib.sha256(trusted(SELF).read_bytes()).digest() ==
+            hashlib.sha256(trusted(Path(p['source']) / 'scripts/host_maintenance.py').read_bytes()).digest(),
+            'Installed helper differs from enrolled source; re-enroll this checkout')
+    velero = p.get('velero', {})
+    require(isinstance(velero, dict) and bool(velero.get('storage_location')),
+            'Explicit Velero storage location required; re-enroll this checkout')
+    require(velero == {
+        'namespace': values.get('HERMES_VELERO_NAMESPACE', 'velero'),
+        'storage_location': values.get('HERMES_VELERO_STORAGE_LOCATION', ''),
+        'ttl': values.get('HERMES_VELERO_BACKUP_TTL', '720h'),
+    }, 'Velero configuration differs from protected binding; re-enroll this checkout')
     require(values.get('HERMES_NAMESPACE') == p['namespace'], 'Configured namespace differs from protected target; correct source configuration, never discover another namespace')
     require(values == envfile(p['env_file']), 'Checkout configuration differs from reviewed protected snapshot; reconcile and review before maintenance')
     return p
@@ -204,6 +221,9 @@ def render(p, folder, values):
 
 
 def prepare(p, name, latest):
+    # Validate the repository recovery contract BEFORE producing an executable plan.
+    # A healthy workload alone does not establish that its backup scope is supported.
+    recovery_backend(p).preflight(p['namespace'])
     before = snapshot(p)
     secret_names = before['secrets'][p['namespace']]
     required = {'hermes-api-server', 'hermes-browser-token', 'hermes-browser-cdp'}
@@ -267,17 +287,84 @@ def guard(p, folder, plan):
 
 
 def recovery_backend(p):
-    backend = module(p['recovery_backend'], 'recovery')
-    # Backend commands must use the same protected cluster credential snapshot.
-    # Do not inherit a kubeconfig beneath an operator-writable directory.
+    """Only the enrolled repository snapshot may supply privileged recovery code."""
+    require('recovery_backend' not in p, 'External recovery modules are not supported; re-enroll')
+    path = trusted(Path(p['source']) / 'scripts/velero_recovery.py')
+    backend = module(path, 'repository_velero_recovery').RecoveryBackend(p)
     for name in ['K', 'V']:
         argv = list(getattr(backend, name, []))
-        require(argv.count('--kubeconfig') == 1, 'Recovery backend needs an explicit kubeconfig client contract')
+        require(argv.count('--kubeconfig') == 1, 'Recovery client requires one protected kubeconfig')
         index = argv.index('--kubeconfig') + 1
-        require(index < len(argv), 'Malformed recovery backend kubeconfig argument')
-        argv[index] = str(trusted(p['kubeconfig']))
-        setattr(backend, name, argv)
+        require(index < len(argv) and argv[index] == str(trusted(p['kubeconfig'])),
+                'Recovery client cluster identity does not match the enrolled checkout')
     return backend
+
+
+def replace_configuration(path, data, expected_digest):
+    """Atomically update data, never execute it or follow its final path symlink."""
+    path = Path(path)
+    require(path.resolve() == path and not path.is_symlink(), 'Configuration path changed')
+    fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    temp = '.maintenance-' + uuid.uuid4().hex
+    try:
+        require(os.readlink('/proc/self/fd/' + str(fd)) == str(path.parent), 'Configuration parent changed')
+        source_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(source_fd, 'rb') as source:
+            stat = os.fstat(source.fileno())
+            require(filemode.S_ISREG(stat.st_mode), 'Configuration must remain a regular file')
+            require(hashlib.sha256(source.read()).hexdigest() == expected_digest,
+                    'Configuration changed while operation ran; reconcile without replaying the upgrade')
+        out = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fd)
+        with os.fdopen(out, 'wb') as target:
+            target.write(data)
+            target.flush()
+            os.fsync(target.fileno())
+            os.fchown(target.fileno(), stat.st_uid, stat.st_gid)
+        current = os.stat(path.name, dir_fd=fd, follow_symlinks=False)
+        require((current.st_ino, current.st_mtime_ns, current.st_size) ==
+                (stat.st_ino, stat.st_mtime_ns, stat.st_size), 'Configuration changed during pin publication')
+        os.replace(temp, path.name, src_dir_fd=fd, dst_dir_fd=fd)
+        os.fsync(fd)
+    finally:
+        try:
+            os.unlink(temp, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        os.close(fd)
+
+
+def publish_image_pins(p, folder, plan):
+    """Keep next week's configured plan consistent with this successful rollout."""
+    images = plan['images']
+    require(set(images) == {'HERMES_AGENT_IMAGE', 'HERMES_WEBUI_IMAGE', 'HERMES_BROWSER_IMAGE'},
+            'Unexpected image pin update scope')
+    source = Path(p['config_path'])
+    protected = trusted(p['env_file'])
+    original, protected_original = source.read_bytes(), protected.read_bytes()
+    require(hashlib.sha256(original).hexdigest() == plan['config_sha256'] and
+            envfile(source) == envfile(protected),
+            'Runtime updated but source configuration changed; reconcile pins without rerunning')
+    # Retain exact original data privately for operator recovery, outside the checkout.
+    for name, data in [('source-config-before.env', original), ('protected-config-before.env', protected_original)]:
+        path = folder / name
+        with path.open('xb') as stream:
+            stream.write(data)
+        path.chmod(0o600)
+    rows = []
+    seen = set()
+    for line in original.decode().splitlines():
+        fields = shlex.split(line, comments=True)
+        key = fields[0].split('=', 1)[0] if fields else None
+        if key in images:
+            rows.append(key + '=' + shlex.quote(images[key])); seen.add(key)
+        else:
+            rows.append(line)
+    require(seen == set(images), 'Source configuration is missing explicit image pins')
+    updated = ('\n'.join(rows) + '\n').encode()
+    replace_configuration(source, updated, plan['config_sha256'])
+    replace_configuration(protected, updated, hashlib.sha256(protected_original).hexdigest())
+    require(source.read_bytes() == protected.read_bytes() == updated, 'Image pin publication incomplete')
+    save(folder / 'published-pins.json', {'images': images, 'configuration_updated': True})
 
 
 def worker(p, folder, plan):
@@ -307,12 +394,15 @@ def worker(p, folder, plan):
                 if doc['kind'] == 'Deployment':
                     actual = next(x for x in after['deployments'] if x['metadata']['name'] == doc['metadata']['name'])
                     require([x['image'] for x in actual['spec']['template']['spec']['containers']] == [x['image'] for x in doc['spec']['template']['spec']['containers']], 'Image verification failed')
+            plan['phase'] = 'rollout-complete; publishing exact image pins'
+            save(folder / 'plan.json', plan)
+            publish_image_pins(p, folder, plan)
             plan['phase'] = 'rollout-complete; application acceptance required'
             save(folder / 'plan.json', plan)
         except Exception as exc:
-            plan['phase'] = 'failed; inspect logs and recovery metadata before retry'
+            plan['phase'] = ('rollout-complete; post-upgrade validation failed; inspect before retry' if plan['phase'].startswith('rollout-complete') else 'failed; inspect logs and recovery metadata before retry')
             save(folder / 'plan.json', plan)
-            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc)})
+            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
             try:
                 backend.diagnostics(p['namespace'], folder)
             except Exception:
@@ -320,12 +410,135 @@ def worker(p, folder, plan):
             raise
 
 
+def recovery_guard(p, plan):
+    require(profile(p['checkout']) == p and p == plan['profile'],
+            'Recovery binding/configuration changed; prepare a new operation')
+    require(hashlib.sha256(Path(p['config_path']).read_bytes()).hexdigest() == plan['config_sha256'],
+            'Recovery source configuration changed')
+    require(tree_hash(p['source']) == plan['source_hashes'], 'Reviewed recovery source changed')
+    current = snapshot(p)
+    before = plan['before']
+    for field in ['namespace', 'secrets']:
+        require(current[field] == before[field], 'Recovery live identity or credentials drifted')
+    for field in ['pvcs', 'deployments']:
+        def identities(state):
+            return {x['metadata']['name']: (x['metadata']['uid'], x['spec']) for x in state[field]}
+        require(identities(current) == identities(before), 'Recovery live resource contract drifted')
+
+
+def require_worker_unit(unit):
+    require(any(x.split(':', 2)[-1] == '/system.slice/' + unit + '.service'
+                for x in Path('/proc/self/cgroup').read_text().splitlines()),
+            'Worker requires its independent systemd service')
+
+
+def launch_recovery(p, instance, operation, backup_name=None):
+    backend = recovery_backend(p)
+    backend.preflight(p['namespace'])
+    if operation == 'restore':
+        require(bool(re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,252}', backup_name or '')),
+                'An exact valid backup name is required')
+        backend.eligible(backup_name, p['namespace'])
+    for path in ['/', '/srv/backup']:
+        fs = os.statvfs(path)
+        require(fs.f_bavail / fs.f_blocks > .10, 'Host free space below ten percent')
+    STATE.mkdir(mode=0o700, exist_ok=True)
+    folder = STATE / (instance + '-' + uuid.uuid4().hex[:12])
+    folder.mkdir(mode=0o700)
+    plan = {'instance': instance, 'namespace': p['namespace'], 'profile': p,
+            'operation': operation, 'target_backup': backup_name, 'backup': None,
+            'before': snapshot(p), 'source_revision': p['source_revision'],
+            'source_hashes': tree_hash(p['source']),
+            'config_sha256': hashlib.sha256(Path(p['config_path']).read_bytes()).hexdigest(),
+            'phase': 'prepared; no workloads changed'}
+    save(folder / 'plan.json', plan)
+    unit = 'hermes-maintenance-' + folder.name
+    args = ['systemd-run', '--unit=' + unit, '--property=Type=exec',
+            '--property=UMask=0077', '--property=StandardOutput=null',
+            '--property=StandardError=null', SELF, '--checkout', p['checkout'],
+            '--worker', '--job', folder.name, operation]
+    if operation == 'restore':
+        args += [backup_name, '--accept-data-loss']
+    run(args)
+    output({'state': 'started, not completed', 'operation': folder.name,
+            'namespace': p['namespace'], 'unit': unit + '.service',
+            'next': 'maintenance.sh logs ' + folder.name})
+
+
+def recovery_worker(p, folder, plan):
+    backend = recovery_backend(p)
+    with open(trusted(backend.ROOT) / 'operation.lock', 'a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            recovery_guard(p, plan)
+            operation = plan['operation']
+            require(operation in ['backup', 'restore'], 'Invalid recovery operation')
+            with open(trusted('/CHANGES.md'), 'a') as audit:
+                audit.write(dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d;%H%M%S;') +
+                            'HERMES_MAINTENANCE;' + operation + ';see phase log;START;' + str(folder) + '\n')
+            plan['phase'] = 'cold-backup' if operation == 'backup' else 'safety-backup-and-restore'
+            save(folder / 'plan.json', plan)
+            if operation == 'backup':
+                name, metadata = backend.backup(p['namespace'], folder)
+                backend.eligible(name, p['namespace'])
+                plan['backup'] = name
+                save(folder / 'backup-metadata.json', metadata)
+                plan['phase'] = 'backup-complete; original replicas resumed'
+            else:
+                result = backend.restore(plan['target_backup'], p['namespace'], folder)
+                save(folder / 'restore-result.json', result)
+                require(kube(p, ['get', 'namespace', p['namespace']])['metadata']['uid'] == result['namespace_uid'],
+                        'Restored namespace identity changed before configuration reconciliation')
+                image_keys = {'hermes-agent': 'HERMES_AGENT_IMAGE', 'hermes-webui': 'HERMES_WEBUI_IMAGE',
+                              'hermes-browser': 'HERMES_BROWSER_IMAGE'}
+                configured = envfile(p['env_file'])
+                restored_pins = {key: configured[key] for key in image_keys.values()}
+                for deployment in kube(p, ['-n', p['namespace'], 'get', 'deployments'])['items']:
+                    key = image_keys.get(deployment['metadata']['name'])
+                    if key:
+                        restored_pins[key] = deployment['spec']['template']['spec']['containers'][0]['image']
+                plan['phase'] = 'restore-complete; reconciling restored image pins'
+                save(folder / 'plan.json', plan)
+                publish_image_pins(p, folder, {**plan, 'images': restored_pins})
+                plan['backup'] = plan['target_backup']
+                plan['phase'] = 'restore-complete; application acceptance and identity re-enrollment required'
+            save(folder / 'plan.json', plan)
+        except Exception as exc:
+            plan['phase'] = ('restore-complete; configuration reconciliation failed; inspect before retry' if plan['phase'].startswith('restore-complete') else 'failed; inspect recovery metadata before retry')
+            save(folder / 'plan.json', plan)
+            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+            try:
+                backend.diagnostics(p['namespace'], folder)
+            except Exception:
+                pass
+            raise
+
+
+@contextlib.contextmanager
+def shared_provision_lock():
+    """Never create host state during status/list/help; enrollment creates this lock."""
+    path = trusted(CONFIG / 'provision.lock')
+    with path.open('rb') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Error('Host enrollment is running; retry after it completes') from None
+        yield
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Independent host maintenance. Read-only cluster: status, plan/render. Upgrade causes downtime and a cold Velero backup, then runs the reviewed installer. Existing sudo rights required. No automatic rollback. Exit 0 success, 1 failed gate, 2 usage. Logs/configuration remain root-only.')
     parser.add_argument('--checkout', required=True, help=argparse.SUPPRESS)
     parser.add_argument('--worker', action='store_true', help=argparse.SUPPRESS)
+    parser.add_argument('--job', help=argparse.SUPPRESS)
     sub = parser.add_subparsers(dest='command', required=True)
     sub.add_parser('status', help='Read-only resource status; not an application probe')
+    sub.add_parser('list-backups', help='Read-only Velero selection, coverage and eligibility for this checkout')
+    sub.add_parser('backup', help='Launch cold Velero backup with downtime; original replicas resume afterward')
+    restore = sub.add_parser('restore', help='Safety backup then replace this instance with an exact recovery point; loses subsequent writes')
+    restore.add_argument('backup')
+    restore.add_argument('--accept-data-loss', action='store_true', required=True,
+                         help='Acknowledge replacement and loss of writes after the selected backup')
     for name in ['plan', 'render']:
         q = sub.add_parser(name, help='Render configured checkout to protected host files; no cluster writes')
         q.add_argument('--latest-stable', action='store_true', help='Resolve stable publisher releases and registry digests now; never float at execution')
@@ -335,8 +548,71 @@ def main(argv=None):
     a = parser.parse_args(argv)
     require(os.geteuid() == 0, 'Use maintenance.sh through the installed sudo helper')
     os.umask(0o077)
+    with shared_provision_lock():
+        return dispatch(a)
+
+
+def operation_progress(p, folder):
+    """Allowlisted native progress; never emit embedded recovery/config data."""
+    result = []
+    namespace = p['velero']['namespace']
+    for relative in ['replicas.json', 'safety/replicas.json']:
+        path = folder / relative
+        if not path.exists():
+            continue
+        meta = json.loads(trusted(path).read_text())
+        require(meta.get('namespace') == p['namespace'], 'Recovery progress scope differs')
+        name = meta.get('backup')
+        if not isinstance(name, str) or not re.fullmatch(r'[a-z0-9][a-z0-9.-]{0,252}', name):
+            continue
+        item = {'name': name, 'stage': 'not yet available', 'volumes': []}
+        try:
+            backup = kube(p, ['-n', namespace, 'get', 'backup.velero.io', name])
+            item['stage'] = backup.get('status', {}).get('phase', 'New')
+            item['sealed'] = backup['metadata'].get('annotations', {}).get('recovery.hermes.io/sealed') == 'true'
+            volumes = kube(p, ['-n', namespace, 'get', 'podvolumebackups.velero.io'])['items']
+            item['volumes'] = [{'volume': v['spec']['volume'], 'phase': v.get('status', {}).get('phase'),
+                                'progress': {k: v.get('status', {}).get('progress', {}).get(k)
+                                             for k in ['bytesDone', 'totalBytes']}}
+                               for v in volumes if v['metadata'].get('labels', {}).get('velero.io/backup-name') == name]
+        except Error:
+            pass
+        result.append(item)
+    path = folder / 'restore-state.json'
+    if path.exists():
+        state = json.loads(trusted(path).read_text())
+        result.append({k: state.get(k) for k in ['restore', 'stage', 'backup', 'safetyBackup']})
+    return result
+
+
+def dispatch(a):
     p = profile(a.checkout)
     name = binding_id(a.checkout)
+    if a.command in ['backup', 'restore']:
+        if a.worker:
+            require(bool(a.job), 'Recovery worker requires a sealed operation')
+            folder, plan = read_plan(a.job, name)
+            require(plan.get('operation') == a.command, 'Recovery operation type mismatch')
+            require(plan['phase'] == 'prepared; no workloads changed', 'Operation already launched; inspect logs, never replay')
+            if a.command == 'restore':
+                require(plan.get('target_backup') == a.backup, 'Recovery point differs from sealed operation')
+            require_worker_unit('hermes-maintenance-' + folder.name)
+            try:
+                recovery_worker(p, folder, plan)
+            except Exception as exc:
+                plan['phase'] = ('restore-complete; configuration reconciliation failed; inspect before retry' if plan['phase'].startswith('restore-complete') else 'failed; inspect recovery metadata before retry')
+                save(folder / 'plan.json', plan)
+                save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
+                raise
+        else:
+            require(a.job is None, 'Operation IDs are internal; use logs to inspect a previous run')
+            launch_recovery(p, name, a.command, getattr(a, 'backup', None))
+        return 0
+    require(a.job is None, 'Operation ID is not valid for this command')
+    if a.command == 'list-backups':
+        output({'instance': name, 'namespace': p['namespace'],
+                'backups': recovery_backend(p).list_backups(p['namespace'])})
+        return 0
     if a.command == 'status':
         state = snapshot(p)
         deployments = [{'name': x['metadata']['name'], 'desired': x['spec'].get('replicas', 1), 'available': x.get('status', {}).get('availableReplicas', 0)} for x in state['deployments']]
@@ -347,8 +623,15 @@ def main(argv=None):
         prepare(p, name, a.latest_stable); return 0
     folder, plan = read_plan(a.plan, name)
     if a.command == 'logs':
-        output({k: plan[k] for k in ['instance', 'namespace', 'phase', 'backup']})
-        output({'protected_logs': str(folder), 'unit': 'hermes-maintenance-' + folder.name + '.service'}); return 0
+        summary = {k: plan[k] for k in ['instance', 'namespace', 'phase', 'backup']}
+        summary.update(protected_logs=str(folder), unit='hermes-maintenance-' + folder.name + '.service',
+                       recovery_progress=operation_progress(p, folder))
+        if (folder / 'failure.json').exists():
+            failure = json.loads(trusted(folder / 'failure.json').read_text())
+            summary['failure'] = failure['message'] if failure.get('public_safe') is True else \
+                'Details are protected; inspect the recorded failure before retrying'
+        output(summary)
+        return 0
     require(plan['phase'] == 'prepared; no workloads changed', 'Plan already launched; inspect logs, never replay')
     unit = 'hermes-maintenance-' + folder.name
     if a.worker:
@@ -356,9 +639,9 @@ def main(argv=None):
         try:
             worker(p, folder, plan)
         except Exception as exc:
-            plan['phase'] = 'failed; inspect logs and recovery metadata before retry'
+            plan['phase'] = ('rollout-complete; post-upgrade validation failed; inspect before retry' if plan['phase'].startswith('rollout-complete') else 'failed; inspect logs and recovery metadata before retry')
             save(folder / 'plan.json', plan)
-            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc)})
+            save(folder / 'failure.json', {'type': type(exc).__name__, 'message': str(exc), 'public_safe': isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True})
             raise
         return 0
     guard(p, folder, plan)
@@ -375,5 +658,5 @@ if __name__ == '__main__':
         sys.exit(main())
     except Exception as exc:
         # Do not echo arbitrary exception payloads (may contain secrets).
-        print('ERROR: ' + (str(exc) if isinstance(exc, Error) else type(exc).__name__ + '; inspect protected logs'), file=sys.stderr)
+        print('ERROR: ' + (str(exc) if isinstance(exc, Error) or getattr(exc, 'public_safe', False) is True else type(exc).__name__ + '; inspect protected logs'), file=sys.stderr)
         sys.exit(1)

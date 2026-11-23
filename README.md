@@ -13,9 +13,9 @@ Lab-oriented Kubernetes/K3s installer for a [Hermes Agent](https://github.com/no
 
 The repository is template-driven. Deployment-specific configuration, credentials, OAuth state, kubeconfigs, rendered artifacts, and backups must remain outside Git.
 
-**Installer candidate: 2.8.0** (see [`VERSION`](VERSION) and the
-[release notes](CHANGELOG.md#v280---unreleased)). The maintenance feature from
-PR #127 is merged into `main`; this is not a published release. Installer versions are separate from application
+**Installer candidate: 2.9.0** (see [`VERSION`](VERSION) and the
+[release notes](CHANGELOG.md#v290---unreleased)). This candidate is not a published
+release. Installer versions are separate from application
 image versions, and updating this checkout does not upgrade a running instance.
 
 ## Requirements
@@ -50,16 +50,18 @@ Before testing this lab setup, read the security, operations, and QA guides:
 
 ## Existing installations: maintenance and upgrade
 
-For an existing 2.7.8 or 2.7.9 installation, **do not rerun the wizard** to adopt
-this feature. Retain the private configuration and recovery tools. The canonical
+For an existing 2.7.x or 2.8.0-candidate installation, **do not rerun the wizard**
+to adopt this feature. Retain private configuration and legacy recovery evidence.
+All new project recovery code now comes from this repository; external backend
+bindings must be reenrolled. The canonical
 implementation is `maintain.sh`; the literal `maintenance.sh` is its compatibility
 launcher. Bare `upgrade` now refuses to act instead of merely restarting images.
 
-To review the **merged, not yet released 2.8.0 code**, use a separate checkout
-(choose an unused directory):
+To review the **not yet released 2.9.0 candidate**, use a separate checkout
+(choose an unused directory; after merge use the approved main commit):
 
 ```bash
-git clone --branch main --single-branch \
+git clone --branch feat/repository-owned-velero-maintenance --single-branch \
   https://github.com/Tuxbull-Open-Source/kube.hermes_setup.git kube.hermes_setup-review
 cd kube.hermes_setup-review
 git log -1 --oneline
@@ -70,9 +72,11 @@ Review and record the exact commit before provisioning it. This only obtains
 source and shows help: it installs no host helper and changes no cluster
 resources. Do not treat a moving branch as a published release tag.
 
-An administrator must first provision the [root-owned helper, source snapshot,
-checkout binding and existing recovery backend](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
-Then run as the ordinary operator with existing sudo rights, on that host:
+An administrator must first provision the [repository-owned root helpers, source
+snapshot and checkout binding](docs/host-maintenance.md#administrator-provisioning-and-trust-boundary).
+Velero, its storage and credentials are prerequisites; no external project-specific
+recovery script is required. Then run as the ordinary operator with existing sudo
+rights, on that host:
 
 ```bash
 ./maintenance.sh status
@@ -122,17 +126,29 @@ separately. This is a safety-critical-field guard, not a byte-for-byte Pod compa
 Isolated-test installs reject pre-existing Ingress/Traefik exposure and rendered
 vendor NetworkPolicy names before cluster writes; they never auto-delete them.
 Unrelated policies remain untouched and must be independently reviewed and tested
-for additive allows. See [isolation limits](docs/host-maintenance.md#proportionate-qualification-and-isolated-rehearsal).
+for additive allows. See [isolation limits](docs/host-maintenance.md#qualification-and-isolated-rehearsal).
 
 **Recovery warning:** upgrade uses a fresh eligible operator-owned Velero cold
 backup. There is no automatic rollback, data rewind, or blind retry after failure.
 An image downgrade alone does not undo data migrations. Inspect protected evidence
 and the exact backup before an operator-authorized restore; restoring can discard
-later writes. Legacy `backup`, `restore`, and `extract` are no longer provided by
-this installer; keep historical tools/archives under the operator retention policy.
+later writes. The supported recovery commands use the enrolled repository Velero
+backend; they do not accept retired encrypted archives or extraction options:
 
-The [2.8.0 qualification record](CHANGELOG.md#v280---unreleased) distinguishes the
-runtime-tested frozen bundle from newer prepared-only targets. Perform application
+```bash
+./maintenance.sh list-backups
+./maintenance.sh backup
+./maintenance.sh logs OPERATION_ID
+# Explicit destructive operation, only after reviewing the exact eligible backup:
+./maintenance.sh restore EXACT_BACKUP_NAME --accept-data-loss
+```
+
+Keep historical tools/archives under the operator retention policy; no implicit
+conversion or deletion occurs. Provisioning and recovery logic are versioned in
+this repository; installation-specific config, bindings and recovery data are not.
+
+The earlier [2.8.0 qualification record](CHANGELOG.md#v280---unreleased) does not
+qualify the new 2.9.0 recovery machinery. Perform application
 login, API, browser/CDP and logical-data acceptance after rollout; Ready Pods alone
 are insufficient.
 

@@ -79,8 +79,9 @@ Terminate TLS at your Ingress controller. This template supports Ingress TLS ref
 ## Backups
 
 Backups can contain OAuth state, user/session data, private configuration and
-Kubernetes Secrets. Backup/recovery is operator-owned through Velero; this installer
-has no backup, restore or extraction commands and does not configure Velero.
+Kubernetes Secrets. Velero infrastructure is operator-owned; the repository's
+host-maintenance commands provide bound cold backup and exact-name restore.
+No arbitrary external recovery module is imported, and Velero itself is not configured.
 Protect storage and credentials with appropriate encryption, access controls and
 retention, and verify consistent PVC and Secret recovery in an isolated environment.
 See [backup ownership](operations.md#backup-and-recovery-operator-owned-velero).
