@@ -6,6 +6,11 @@ All notable changes to this project are documented in this file.
 
 ## [v2.9.0] - Unreleased
 
+Release preparation consolidates the unpublished 2.8.0 candidate and the following
+repository-owned recovery changes. See [the release handoff](docs/release-2.9.0.md)
+for compatibility, qualification and publication gates. `VERSION` is already 2.9.0;
+opening a release PR neither publishes a tag nor updates deployed workloads.
+
 ### Added
 
 - Repository-owned Velero cold backup, listing and exact-name recovery through
@@ -27,6 +32,13 @@ All notable changes to this project are documented in this file.
 
 
 ### Fixed
+
+- Recovery of a known-good point no longer requires an unhealthy current image
+  to start first. The pre-restore safety-only checkpoint captures both claims and
+  resources, preserves failure evidence and is deliberately not a normal eligible
+  recovery point. Failed capture/helper cleanup or restarted writers block deletion.
+- The release fault drill verified original SQLite/workspace data, API/CDP and
+  reenrollment through the native CLI; see the scoped qualification record.
 
 - Host-maintenance planning now accepts a retained `hermes-bootstrap-archive`
   Secret. Sealed maintenance runs preserve it without creating, deleting,

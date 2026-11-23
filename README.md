@@ -17,6 +17,9 @@ The repository is template-driven. Deployment-specific configuration, credential
 [release notes](CHANGELOG.md#v290---unreleased)). This candidate is not a published
 release. Installer versions are separate from application
 image versions, and updating this checkout does not upgrade a running instance.
+The [2.9.0 release handoff](docs/release-2.9.0.md) consolidates the previously
+unpublished maintenance work and its operator/publication gates; no tag is created
+by opening or merging a release-preparation PR.
 
 ## Requirements
 
