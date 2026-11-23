@@ -192,6 +192,16 @@ excludes source PV manifests and uses Velero resource modifiers for fresh dynami
 PVC binding. PVR coverage, new identities and sampled hash/mode/owner equality
 must pass before application replicas resume. No automatic destructive retry occurs.
 
+The **backup** includes only the selected Namespace as a cluster-scoped resource,
+plus that namespace's resources; source PV manifests are explicitly excluded.
+Its downloaded native metadata archive is checked privately for foreign resources
+and for the original Namespace identity, labels and annotations. The **restore**
+must still allow the PV and PVC resource types. Velero gates FSB/PVR creation on
+those filters and can
+otherwise report a Completed resource restore with no volume restores. The exact
+PVR coverage gate must not be weakened. See the upstream
+[restore implementation](https://github.com/vmware-tanzu/velero/blob/v1.18.0/pkg/restore/restore.go).
+
 Kopia samples are not a complete logical-data or application-recovery proof.
 On a failure after deletion, preserve the safety backup and private stage records;
 do not run the operation again blindly. Never delete retained backups just to

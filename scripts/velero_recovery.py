@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tarfile
 import time
 import uuid
 
@@ -141,6 +142,44 @@ class RecoveryBackend:
         require(all(p.get('status', {}).get('phase') == 'Bound' for p in pvcs), 'Unbound PVC')
         return pvcs
 
+    @staticmethod
+    def _namespace_contract(obj):
+        meta = obj.get('metadata', {})
+        selected = {field: {k: v for k, v in meta.get(field, {}).items() if not k.startswith('velero.io/')}
+                    for field in ('labels', 'annotations')}
+        return hashlib.sha256(json.dumps(selected, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+    def _archive_scope(self, name, meta, folder):
+        """Inspect native Velero metadata privately before allowing cluster-scoped restore."""
+        path = Path(folder) / 'velero-metadata.tar.gz'
+        self._run(self.V + ['backup', 'download', name, '--output', str(path)])
+        require(path.is_file() and not path.is_symlink(), 'Metadata download unavailable')
+        path.chmod(0o600)
+        found = False
+        with tarfile.open(path, 'r:gz') as archive:
+            members = archive.getmembers()
+            require(len(members) <= 100000 and sum(m.size for m in members) <= 128 * 1024 * 1024,
+                    'Metadata archive exceeds review bounds')
+            for member in members:
+                require(member.isdir() or member.isfile(), 'Metadata archive contains non-regular entries')
+                if not member.isfile() or not member.name.startswith('resources/'):
+                    continue
+                obj = json.load(archive.extractfile(member))
+                identity = obj.get('metadata', {})
+                if '/cluster/' in member.name:
+                    require(obj.get('kind') == 'Namespace' and member.name.split('/')[1] == 'namespaces',
+                            'Unexpected cluster-scoped archive item')
+                if obj.get('kind') == 'Namespace' and obj.get('apiVersion') == 'v1':
+                    require(identity.get('name') == meta['namespace'] and
+                            identity.get('uid') == meta['namespaceUID'] and
+                            self._namespace_contract(obj) == meta['namespaceMetadataHash'],
+                            'Archived namespace metadata differs from the cold snapshot')
+                    found = True
+                else:
+                    require(identity.get('namespace') == meta['namespace'],
+                            'Backup contains foreign or unexpected cluster-scoped resources')
+        require(found, 'Backup does not preserve the original Namespace metadata')
+
     def _active(self):
         return any(x.get('status', {}).get('phase', 'New') not in TERMINAL
                    for kind in ('backups', 'restores', 'podvolumebackups', 'podvolumerestores',
@@ -192,8 +231,9 @@ class RecoveryBackend:
             require(ref.get('uid') == pvc['metadata']['uid'] and ref.get('namespace') == ns,
                     'Source PV claim identity mismatch')
             source_pvs[pvc['metadata']['name']] = spec['volumeName']
-        return {'version': 1, 'instance': self.instance, 'namespace': ns, 'namespaceUID': self.binding['namespace_uid'],
+        return {'version': 2, 'instance': self.instance, 'namespace': ns, 'namespaceUID': self.binding['namespace_uid'],
                 'clusterUID': self.binding['cluster_uid'], 'pvcs': dict(self.binding['pvc_uids']),
+                'namespaceMetadataHash': self._namespace_contract(self._get('namespace', ns)),
                 'sourcePVs': source_pvs,
                 'replicas': {d['metadata']['name']: d['spec'].get('replicas', 1) for d in deployments},
                 'deploymentUIDs': {d['metadata']['name']: d['metadata']['uid'] for d in deployments},
@@ -374,11 +414,16 @@ done'''
             self._create({'apiVersion': 'velero.io/v1', 'kind': 'Backup',
                           'metadata': {'name': name, 'namespace': self.velero_namespace,
                                        'annotations': {KEY: json.dumps(meta, separators=(',', ':'))}},
-                          'spec': {'includedNamespaces': [ns], 'includeClusterResources': False,
-                                   'excludedResources': EXCLUDED, 'snapshotVolumes': False,
+                          'spec': {'includedNamespaces': [ns],
+                                   'includedClusterScopedResources': ['namespaces'],
+                                   'excludedClusterScopedResources': ['persistentvolumes'],
+                                   'includedNamespaceScopedResources': ['*'],
+                                   'excludedNamespaceScopedResources': [x for x in EXCLUDED if x != 'persistentvolumes'],
+                                   'snapshotVolumes': False,
                                    'defaultVolumesToFsBackup': False, 'storageLocation': self.location, 'ttl': self.ttl}})
             save(folder / 'backup.json', self._velero_wait('backups', name, meta))
             save(folder / 'pvb.json', self._coverage(name, meta))
+            self._archive_scope(name, meta, folder)
             require(self._quiet(ns, meta['helper']) and self._probes(meta) == meta['probes'],
                     'Cold data changed during backup')
         except BaseException:
@@ -407,15 +452,21 @@ done'''
             annotations = b['metadata'].get('annotations', {})
             m = json.loads(annotations.get(KEY, '{}'))
             require(annotations.get(SEAL) == 'true', 'Backup has no successful-resume seal')
-            require(m.get('version') == 1 and m.get('instance') == self.instance and m.get('namespace') == ns and
+            require(m.get('version') == 2 and m.get('instance') == self.instance and m.get('namespace') == ns and
                     m.get('clusterUID') == self.binding['cluster_uid'] and
                     bool(m.get('namespaceUID')) and set(m.get('pvcs', {})) == PVC_NAMES and
                     all(isinstance(v, str) and v for v in m['pvcs'].values()) and m.get('backup') == name,
                     'Backup identity differs from enrollment')
             sp, s = b['spec'], b.get('status', {})
-            require(sp.get('includedNamespaces') == [ns] and sp.get('includeClusterResources') is False and
-                    sp.get('storageLocation') == self.location and sp.get('snapshotVolumes') is False and
-                    sp.get('defaultVolumesToFsBackup') is False and set(EXCLUDED) <= set(sp.get('excludedResources', [])),
+            require(sp.get('includedNamespaces') == [ns] and not sp.get('excludedNamespaces') and
+                    sp.get('includeClusterResources') is None and not sp.get('includedResources') and
+                    not sp.get('excludedResources') and not sp.get('labelSelector') and not sp.get('orLabelSelectors') and
+                    sp.get('includedClusterScopedResources') == ['namespaces'] and
+                    sp.get('excludedClusterScopedResources') == ['persistentvolumes'] and
+                    sp.get('includedNamespaceScopedResources') == ['*'] and
+                    sp.get('defaultVolumesToFsBackup') is False and sp.get('snapshotVolumes') is False and
+                    sp.get('storageLocation') == self.location and
+                    set(sp.get('excludedNamespaceScopedResources', [])) == set(EXCLUDED) - {'persistentvolumes'},
                     'Backup scope differs from cold contract')
             require(s.get('phase') == 'Completed' and not s.get('errors') and not s.get('warnings') and
                     dt.datetime.fromisoformat(s['expiration'].replace('Z', '+00:00')) > now(), 'Backup incomplete or expired')
@@ -497,6 +548,7 @@ done'''
         meta = self.eligible(name, ns)
         self.preflight(ns)
         self.diagnostics(ns, folder / 'diagnostics')
+        self._archive_scope(name, meta, folder)
         safety, _ = self.backup(ns, folder / 'safety')
         self.eligible(safety, ns)
         self.eligible(name, ns)  # May have expired during the safety backup.
@@ -522,12 +574,18 @@ done'''
             save(folder / 'restore-state.json', state)
             self._create({'apiVersion': 'velero.io/v1', 'kind': 'Restore',
                           'metadata': {'name': rname, 'namespace': self.velero_namespace},
-                          'spec': {'backupName': name, 'includedNamespaces': [ns], 'includeClusterResources': False,
-                                   'excludedResources': EXCLUDED, 'restorePVs': True, 'existingResourcePolicy': 'none',
+                          'spec': {'backupName': name, 'includedNamespaces': [ns], 'includeClusterResources': True,
+                                   # PV manifests were excluded from the BACKUP. Do not
+                                   # exclude the PV type here: Velero gates FSB/PVR creation
+                                   # on both PV and PVC types being allowed during restore.
+                                   'excludedResources': [x for x in EXCLUDED if x != 'persistentvolumes'],
+                                   'restorePVs': True, 'existingResourcePolicy': 'none',
                                    'resourceModifier': {'apiGroup': '', 'kind': 'configmap', 'name': rname}}})
             save(folder / 'restore.json', self._velero_wait('restores', rname, meta))
             restored = copy.deepcopy(meta)
             restored['namespaceUID'] = self._get('namespace', ns)['metadata']['uid']
+            require(self._namespace_contract(self._get('namespace', ns)) == meta['namespaceMetadataHash'],
+                    'Restored Namespace labels or annotations differ')
             require(restored['namespaceUID'] != meta['namespaceUID'], 'Namespace was not replaced')
             pvcs = self._items('pvc', ns)
             restored['pvcs'] = {p['metadata']['name']: p['metadata']['uid'] for p in pvcs}

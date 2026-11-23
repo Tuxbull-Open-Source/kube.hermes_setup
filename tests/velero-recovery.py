@@ -102,6 +102,9 @@ class Fake(r.RecoveryBackend):
             self.backups[name]['metadata']['annotations'][r.SEAL] = 'true'
         return ''
 
+    def _archive_scope(self, name, meta, folder):
+        self.actions.append(('archive-scope', name))
+
     def _create(self, value):
         self.objects.append(copy.deepcopy(value))
         kind, name = value['kind'], value['metadata']['name']
@@ -203,6 +206,33 @@ class RecoveryTests(unittest.TestCase):
             private.unlink()
             empty = self.b._probes({'namespace': self.ns, 'helper': 'helper'})
             self.assertIn('/data/workspace/no-files', empty)
+
+    def test_archive_rejects_foreign_scope_and_missing_namespace(self):
+        import io
+        import tarfile
+        meta = self.b.preflight(self.ns)
+        folder = self.folder / 'archive'; folder.mkdir()
+        for case in ('good', 'missing', 'foreign', 'cluster'):
+            records = []
+            if case != 'missing':
+                records.append(('resources/namespaces/cluster/' + self.ns + '.json',
+                    {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': self.ns, 'uid': meta['namespaceUID']}}))
+            if case == 'foreign':
+                records.append(('resources/secrets/namespaces/other/example.json',
+                    {'kind': 'Secret', 'metadata': {'name': 'example', 'namespace': 'other'}}))
+            if case == 'cluster':
+                records.append(('resources/clusterroles.rbac.authorization.k8s.io/cluster/example.json',
+                    {'kind': 'ClusterRole', 'metadata': {'name': 'example', 'namespace': self.ns}}))
+            with tarfile.open(folder / 'velero-metadata.tar.gz', 'w:gz') as archive:
+                for name, obj in records:
+                    data = json.dumps(obj).encode(); info = tarfile.TarInfo(name); info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+            with patch.object(self.b, '_run', return_value=''), self.subTest(case=case):
+                if case == 'good':
+                    r.RecoveryBackend._archive_scope(self.b, 'backup', meta, folder)
+                else:
+                    with self.assertRaises(r.RecoveryError):
+                        r.RecoveryBackend._archive_scope(self.b, 'backup', meta, folder)
 
     def test_explicit_cli_binding(self):
         for cmd in (self.b.K, self.b.V):
@@ -308,8 +338,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(self.b.pods)
         self.assertEqual(len(self.b.backups), 2)
         restore = next(o for o in self.b.objects if o['kind'] == 'Restore')
-        self.assertFalse(restore['spec']['includeClusterResources'])
-        self.assertIn('persistentvolumes', restore['spec']['excludedResources'])
+        self.assertTrue(restore['spec']['includeClusterResources'])
+        self.assertNotIn('persistentvolumes', restore['spec']['excludedResources'])
+        self.assertNotIn('persistentvolumeclaims', restore['spec']['excludedResources'])
+        self.assertEqual(self.b.backups[name]['spec']['includedClusterScopedResources'], ['namespaces'])
+        self.assertEqual(self.b.backups[name]['spec']['excludedClusterScopedResources'], ['persistentvolumes'])
         modifier = next(o for o in self.b.objects if o['kind'] == 'ConfigMap')
         rules = json.loads(modifier['data']['rules.yaml'])['resourceModifierRules']
         self.assertIsNone(json.loads(rules[0]['mergePatches'][0]['patchData'])['spec']['volumeName'])
