@@ -22,7 +22,7 @@ import stat as filemode
 import uuid
 import yaml
 
-SELF = '/usr/local/libexec/hermes-maintenance.py'
+SELF = '/usr/local/libexec/hermes-maintenance-v2.py'
 CONFIG = Path('/etc/hermes-maintenance')
 STATE = Path('/srv/backup/hermes-maintenance')
 SAFE_ENV = {'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', 'HOME': '/root', 'LANG': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1'}

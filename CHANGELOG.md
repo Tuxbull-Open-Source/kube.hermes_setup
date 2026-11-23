@@ -16,6 +16,8 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
+- Version-2 launchers install/use a separate `hermes-maintenance-v2.py`, leaving
+  the legacy controller executable and unrelated bindings untouched.
 - Recovery prerequisites are checked before upgrade planning. Existing external
   backend bindings require explicit reenrollment, never automatic adoption.
 - Successful rollouts persist exact image pins in the authoritative private

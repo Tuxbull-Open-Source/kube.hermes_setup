@@ -13,13 +13,13 @@ case "${1:-}" in
   --instance) printf 'Instance selection is not supported; use this checkout configuration.\n' >&2; exit 2 ;;
   upgrade|plan|render|logs|backup|list-backups|restore)
     [[ "${1:-}" != upgrade || $# -eq 2 ]] || { printf 'Usage: maintenance.sh upgrade PLAN\nNo rollout was started.\n' >&2; exit 2; }
-    [[ -x /usr/local/libexec/hermes-maintenance.py ]] || { printf 'Host helper not provisioned for this checkout. No rollout was started.\n' >&2; exit 2; }
+    [[ -x /usr/local/libexec/hermes-maintenance-v2.py ]] || { printf 'Host helper not provisioned for this checkout. No rollout was started.\n' >&2; exit 2; }
     [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
-    exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@" ;;
+    exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance-v2.py --checkout "$ROOT_DIR" "$@" ;;
   status)
-    if [[ -x /usr/local/libexec/hermes-maintenance.py ]]; then
+    if [[ -x /usr/local/libexec/hermes-maintenance-v2.py ]]; then
       [[ -z "${ENV_FILE:-}" ]] || { printf 'Host maintenance uses the checkout configuration; ENV_FILE override is not supported.\n' >&2; exit 2; }
-      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance.py --checkout "$ROOT_DIR" "$@"
+      exec /usr/bin/sudo /usr/local/libexec/hermes-maintenance-v2.py --checkout "$ROOT_DIR" "$@"
     fi ;;
 esac
 # Rotation input passed explicitly in the process environment must survive

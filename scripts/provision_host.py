@@ -41,7 +41,7 @@ import tempfile
 import uuid
 
 PROVISION = Path('/usr/local/libexec/hermes-provision-host.py')
-HELPER = Path('/usr/local/libexec/hermes-maintenance.py')
+HELPER = Path('/usr/local/libexec/hermes-maintenance-v2.py')
 SOURCES = Path('/usr/local/lib/hermes-maintenance')
 CONFIG = Path('/etc/hermes-maintenance')
 STATE = Path('/srv/backup/hermes-maintenance')

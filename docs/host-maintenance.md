@@ -5,6 +5,13 @@ The 2.9.0 candidate keeps **all project-specific execution code in this reposito
 There is no configurable external Python recovery backend. Root-protected installed
 copies are built from an explicitly reviewed commit, not maintained separately.
 
+Version-2 launchers and workers use
+`/usr/local/libexec/hermes-maintenance-v2.py`. Provisioning does not overwrite the
+legacy `/usr/local/libexec/hermes-maintenance.py`: existing version-1 checkouts,
+bindings and independent recovery backends retain their original entrypoint.
+Only the explicitly enrolled checkout is migrated. This side-by-side arrangement
+prevents a new controller's schema guard from disabling unrelated legacy controls.
+
 ## Prerequisites and boundaries
 
 - Existing Kubernetes and Velero with a version-pinned stable 1.18+ server,

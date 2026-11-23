@@ -135,7 +135,7 @@ class FixtureTests(unittest.TestCase):
         for constant, relative in [('SOURCES', 'sources'), ('CONFIG', 'config'),
                                    ('STATE', 'backup'), ('RECOVERY', 'backup/recovery'),
                                    ('PROVISION', 'libexec/hermes-provision-host.py'),
-                                   ('HELPER', 'libexec/hermes-maintenance.py'), ('AUDIT', 'CHANGES.md')]:
+                                   ('HELPER', 'libexec/hermes-maintenance-v2.py'), ('AUDIT', 'CHANGES.md')]:
             obj = patch.object(p, constant, self.root / relative); obj.start(); self.addCleanup(obj.stop)
         # Privilege boundary mocked to this test-owned fixture. Never install to
         # actual privileged paths, even when a test runner happens to be root.
@@ -208,6 +208,10 @@ class FixtureTests(unittest.TestCase):
         self.stage()
         unrelated = p.CONFIG / 'unrelated-legacy.json'; unrelated.write_text('{"legacy":true}')
         p.HELPER.parent.mkdir(); p.HELPER.write_bytes(b'old helper')
+        legacy = p.HELPER.with_name('hermes-maintenance.py')
+        legacy.write_bytes(b'legacy controller must remain unchanged')
+        legacy.chmod(0o755)
+        legacy_stat = legacy.stat()
         with patch.object(p, 'kube', side_effect=self.inventory):
             name = p.enroll(self.checkout, COMMIT, str(self.credential))
             binding = json.loads((p.CONFIG / (name + '.json')).read_text())
@@ -219,8 +223,11 @@ class FixtureTests(unittest.TestCase):
             p.enroll(self.checkout, COMMIT, str(self.credential))
         backups = list(p.STATE.glob('enrollment-*'))
         self.assertEqual(len(backups), 1)  # Identical reenrollment is a no-change pass.
-        self.assertTrue(any((x / '0-hermes-maintenance.py').read_bytes() == b'old helper' for x in backups))
+        self.assertTrue(any((x / '0-hermes-maintenance-v2.py').read_bytes() == b'old helper' for x in backups))
         self.assertEqual(unrelated.read_text(), '{"legacy":true}')
+        self.assertEqual(legacy.read_bytes(), b'legacy controller must remain unchanged')
+        self.assertEqual((legacy.stat().st_ino, legacy.stat().st_mtime_ns, legacy.stat().st_mode),
+                         (legacy_stat.st_ino, legacy_stat.st_mtime_ns, legacy_stat.st_mode))
         self.assertEqual(stat.S_IMODE(p.RECOVERY.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE((p.CONFIG / (name + '.env')).stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(p.HELPER.stat().st_mode), 0o755)
