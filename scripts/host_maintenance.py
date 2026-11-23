@@ -210,13 +210,15 @@ def prepare(p, name, latest):
     if envfile(p['env_file'])['HERMES_AUTH_MODE'] == 'local-password':
         required.add('hermes-dashboard-auth')
     require(required <= secret_names.keys(), 'Missing existing credentials; upgrade must not generate keys')
-    require('hermes-bootstrap-archive' not in secret_names, 'Retained bootstrap Secret requires separate preservation review')
+    # Retained archives are covered by the same drift/preservation contract as
+    # other Secrets; the sealed installer mode below must never replay them.
     STATE.mkdir(mode=0o700, exist_ok=True)
     folder = STATE / (name + '-' + uuid.uuid4().hex[:12])
     folder.mkdir(mode=0o700)
     values = envfile(p['env_file'])
     require(values.get('HERMES_BOOTSTRAP_MODE') == 'disabled', 'Upgrade requires explicit disabled bootstrap; manage profile changes separately')
     require(not values.get('HERMES_ADDON_REQUIREMENTS'), 'Upgrade must not replace addon packages')
+    values['HERMES_MAINTENANCE_UPGRADE'] = 'true'
     resolver = module(Path(p['source']) / 'scripts/stable_images.py', 'stable_images')
     targets = resolver.resolve() if latest else resolver.verify_selected(values)
     # Reuse credentials only. Never let an upgrade become a rotation.
@@ -239,6 +241,7 @@ def prepare(p, name, latest):
             'phase': 'prepared; no workloads changed', 'backup': None}
     save(folder / 'plan.json', plan)
     output({'plan': folder.name, 'namespace': p['namespace'], 'phase': plan['phase'], 'images': plan['images'],
+            'bootstrap_archive': 'retained without replay' if 'hermes-bootstrap-archive' in secret_names else 'absent; not created',
             'source_revision': p['source_revision'], 'log': str(folder / 'render.log'),
             'qualification': 'Review release compatibility and targeted acceptance before upgrade; no automatic full PVC clone.'})
 

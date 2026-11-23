@@ -70,10 +70,14 @@ container = job["spec"]["template"]["spec"]["containers"][0]
 script = container["args"][0]
 # Preserve the init Job's private extraction tree while redirecting only mounted paths.
 script = script.replace("/tmp/hermes-bootstrap", "__HERMES_EXTRACT__")
-script = script.replace("/bootstrap/bootstrap.tar.gz", f"{root}/bootstrap/bootstrap.tar.gz")
-script = script.replace("/opt/data", f"{root}/home")
-script = script.replace("/workspace", f"{root}/workspace")
-script = script.replace("__HERMES_EXTRACT__", "/tmp/hermes-bootstrap")
+script = script.replace("/bootstrap/bootstrap.tar.gz", "__HERMES_ARCHIVE__")
+script = script.replace("/opt/data", "__HERMES_HOME__")
+script = script.replace("/workspace", "__HERMES_WORKSPACE__")
+# Resolve sentinels last: TMPDIR may itself live beneath /opt/data or /workspace.
+script = script.replace("__HERMES_ARCHIVE__", f"{root}/bootstrap/bootstrap.tar.gz")
+script = script.replace("__HERMES_HOME__", f"{root}/home")
+script = script.replace("__HERMES_WORKSPACE__", f"{root}/workspace")
+script = script.replace("__HERMES_EXTRACT__", f"{root}/extracted-bootstrap")
 # The production Job runs as root. The fixture is already owned by the test user.
 script = "\n".join(
     ": # test fixture owns temporary paths" if line.strip().startswith("chown -R ") else line

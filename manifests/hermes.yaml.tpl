@@ -58,6 +58,8 @@ spec:
         env:
         - name: HERMES_BOOTSTRAP_MODE
           value: "${HERMES_BOOTSTRAP_MODE}"
+        - name: HERMES_MAINTENANCE_UPGRADE
+          value: "${HERMES_MAINTENANCE_UPGRADE}"
         - name: HERMES_ADDON_PYTHON_MODE
           value: "${HERMES_ADDON_PYTHON_MODE}"
         - name: HERMES_UV_DIR
@@ -196,7 +198,7 @@ spec:
               cp -a "$src" "$dest"
             fi
           }
-          if [ -f /bootstrap/bootstrap.tar.gz ]; then
+          if [ "${HERMES_MAINTENANCE_UPGRADE}" != "true" ] && [ -f /bootstrap/bootstrap.tar.gz ]; then
             rm -rf /tmp/hermes-bootstrap
             mkdir -p /tmp/hermes-bootstrap
             tar -xzf /bootstrap/bootstrap.tar.gz -C /tmp/hermes-bootstrap
