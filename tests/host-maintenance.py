@@ -41,15 +41,20 @@ class Contract(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             source = root / 'hermes.env'
-            text = 'HERMES_NAMESPACE=fixture\nHERMES_AUTH_MODE=external-oidc\n'
+            text = 'HERMES_NAMESPACE=fixture\nHERMES_AUTH_MODE=external-oidc\nHERMES_VELERO_STORAGE_LOCATION=fixture-store\n'
             source.write_text(text)
             protected = root / 'protected.env'
             protected.write_text(text)
             binding = dict(checkout=str(root), config_path=str(source), namespace='fixture',
-                           source=str(root), env_file=str(protected), recovery_backend='/backend', kubeconfig='/config')
+                           source=str(root), env_file=str(protected), kubeconfig='/config',
+                           binding_version=2, velero={'namespace': 'velero', 'storage_location': 'fixture-store', 'ttl': '720h'})
             config = root / (host.binding_id(root) + '.json')
             config.write_text(json.dumps(binding))
-            with patch.object(host, 'CONFIG', root), patch.object(host, 'trusted', side_effect=Path):
+            (root / 'scripts').mkdir()
+            helper = root / 'scripts/host_maintenance.py'
+            helper.write_text('fixture helper')
+            with patch.object(host, 'CONFIG', root), patch.object(host, 'SELF', str(helper)), \
+                 patch.object(host, 'trusted', side_effect=Path):
                 self.assertEqual(host.profile(str(root)), binding)
                 # A protected mapping cannot route this checkout to another namespace.
                 binding['namespace'] = 'other'
@@ -99,16 +104,20 @@ class Contract(unittest.TestCase):
             host.read_plan('other-0123456789ab', 'selected')
 
     def test_backend_uses_protected_cluster_credentials(self):
-        backend = SimpleNamespace(K=['kubectl', '--kubeconfig', '/operator/config'],
-                                  V=['velero', '--kubeconfig', '/operator/config'])
-        profile = {'recovery_backend': '/protected/backend.py', 'kubeconfig': '/protected/config'}
-        with patch.object(host, 'module', return_value=backend), patch.object(host, 'trusted', side_effect=Path):
+        backend = SimpleNamespace(K=['kubectl', '--kubeconfig', '/protected/config'],
+                                  V=['velero', '--kubeconfig', '/protected/config'])
+        profile = {'source': '/protected/source', 'kubeconfig': '/protected/config'}
+        factory = SimpleNamespace(RecoveryBackend=lambda binding: backend)
+        with patch.object(host, 'module', return_value=factory) as loader, patch.object(host, 'trusted', side_effect=Path):
             selected = host.recovery_backend(profile)
             self.assertEqual(selected.K[-1], '/protected/config')
             self.assertEqual(selected.V[-1], '/protected/config')
+            self.assertEqual(loader.call_args.args[0], Path('/protected/source/scripts/velero_recovery.py'))
             selected.K = ['kubectl']
             with self.assertRaises(host.Error):
                 host.recovery_backend(profile)
+            with self.assertRaisesRegex(host.Error, 'External recovery'):
+                host.recovery_backend({**profile, 'recovery_backend': '/external.py'})
 
     def test_namespace_guard(self):
         with self.assertRaises(ValueError):

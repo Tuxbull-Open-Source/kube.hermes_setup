@@ -1,7 +1,7 @@
 # Operations guide
 
-For the 2.8.0 candidate, start with the [existing-installation migration](../README.md#existing-installations-maintenance-and-upgrade)
-and [release notes](../CHANGELOG.md#v280---unreleased). The legacy commands below
+For the 2.9.0 candidate, start with the [existing-installation migration](../README.md#existing-installations-maintenance-and-upgrade)
+and [release notes](../CHANGELOG.md#v290---unreleased). The legacy commands below
 require the intended configuration. For enrolled checkouts,
 use `maintenance.sh status` and the host workflow instead.
 
@@ -45,22 +45,34 @@ is a compatibility launcher for `maintain.sh`.
 
 ## Backup and recovery (operator-owned Velero)
 
-Backup and recovery are owned by the operator's Velero deployment, not this
-installer. `maintain.sh` no longer provides `backup`, `restore` or `extract`.
-There is no automatic conversion of older archives and no deletion of existing
-archives, private configuration, PVCs or Secrets. Keep any legacy recovery tools
-and passphrases under your separate retention policy.
+Velero infrastructure, bucket credentials and schedules are operator-owned
+prerequisites. The project-specific cold-backup, listing and restore machinery is
+now supplied by this repository, through the same enrolled host-maintenance path:
 
-Protect both `hermes-home` (`/opt/data`) and `hermes-workspace` (`/workspace`),
-matching Kubernetes resources/Secrets, and private operator-side configuration
-and bootstrap inputs. Velero namespace/resource backups alone do not prove PVC
-contents were captured: choose and validate a volume-data method compatible with
-your storage class, including node-local storage. Establish application-consistent
-capture (including SQLite state), access controls, encryption, retention and
-isolated restore drills in your own runbook. This repository does not install,
-configure or validate Velero. Provider namespaces such as Authelia need separate
-coverage. After external recovery, verify ownership, credentials, application
-health and persistence before serving traffic; see the reconciliation commands below.
+```bash
+./maintenance.sh list-backups
+./maintenance.sh backup
+./maintenance.sh logs OPERATION_ID
+# Destructive replacement; choose an exact eligible backup and accept lost writes:
+./maintenance.sh restore EXACT_BACKUP_NAME --accept-data-loss
+```
+
+Provision the [reviewed repository helpers](host-maintenance.md) first. There is
+no external recovery Python script, legacy encrypted-archive conversion or
+implicit deletion of old recovery tools. Backups cover both Hermes PVCs and
+matching namespaced resources/Secrets, using a cold helper and verified Kopia
+records. Listing selection alone does not prove volume coverage or recoverability.
+A failed backup resumes the original replica map unless safe cleanup cannot be
+established; inspect the protected operation metadata before retrying.
+
+Restore first takes a safety backup, then replaces the bound namespace and data.
+It validates new identities and sampled contents before resuming workloads and
+requires application acceptance plus explicit identity reenrollment. The host
+configuration's image pins are reconciled with the restored deployments; review
+any other host configuration changes separately. Provider namespaces such as
+Authelia and operator-side files need separate coverage. No restore is called
+application-verified solely because Pods are Ready. See the full
+[recovery contract and limits](host-maintenance.md#restore-and-recovery-limits).
 
 ## Reconcile the internal API key after an external PVC migration
 

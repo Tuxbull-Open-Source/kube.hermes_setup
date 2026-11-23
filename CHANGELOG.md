@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [v2.9.0] - Unreleased
+
+### Added
+
+- Repository-owned Velero cold backup, listing and exact-name recovery through
+  the same enrolled maintenance CLI; no separately maintained recovery module.
+- Reviewed archive staging and host enrollment scripts, protected version-2
+  bindings, shared provisioning/recovery locks and source receipts.
+- Private-artifact ignore/tracked-tree tests and a read-only CI contract workflow.
+
+### Changed
+
+- Recovery prerequisites are checked before upgrade planning. Existing external
+  backend bindings require explicit reenrollment, never automatic adoption.
+- Successful rollouts persist exact image pins in the authoritative private
+  configuration; restores reconcile restored pins and require identity reenrollment.
+- Velero installation, storage credentials and schedules remain prerequisites;
+  project-specific backup/provisioning logic is shipped in this repository.
+
+
 ### Fixed
 
 - Host-maintenance planning now accepts a retained `hermes-bootstrap-archive`

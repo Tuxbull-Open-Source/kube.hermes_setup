@@ -265,7 +265,8 @@ Do not print environment files, package-registry credentials, Kubernetes Secrets
 
 ## Backup and recovery boundaries
 
-Backup/recovery is operator-owned through Velero; see the
+Velero infrastructure is operator-owned; backup/recovery orchestration is supplied
+by the repository's bound host-maintenance commands. See the
 [operations boundary](operations.md#backup-and-recovery-operator-owned-velero).
 Verify that the selected volume-data method preserves required files, symlinks,
 permissions and ownership, rather than assuming a Kubernetes resource backup does.

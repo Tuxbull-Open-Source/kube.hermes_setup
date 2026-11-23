@@ -59,10 +59,21 @@ python3 tests/maintenance-contract.py
 ./tests/browser-cdp-convergence.sh
 ```
 
-The local contract rejects removed backup/restore/extract commands without cluster
-calls or archive changes. Credential reconciliation and rotation remain supported.
-Velero recovery drills are operator-owned; this repository neither configures nor
-tests Velero. See [backup ownership](operations.md#backup-and-recovery-operator-owned-velero).
+The local contract rejects the retired encrypted-archive/extraction interface and
+requires explicit data-loss acknowledgment for native Velero restore. Run the
+repository recovery and private-artifact contracts as well:
+
+```bash
+python3 tests/private-artifact-boundary.py
+python3 tests/host-provisioning.py
+python3 tests/host-recovery.py
+python3 tests/velero-recovery.py
+```
+
+Those are mocked/local tests, not recovery evidence. Qualify the final native
+entrypoints on a disposable cluster with real Velero backup and fresh PVC restore,
+then application checks and fixture cleanup. Velero infrastructure remains a
+prerequisite; see [backup ownership](operations.md#backup-and-recovery-operator-owned-velero).
 These local checks do not replace the mandatory live gates above.
 
 ## Startup failures

@@ -43,7 +43,8 @@ class BootstrapMaintenance(unittest.TestCase):
                         (folder / 'rendered').mkdir()
                         (folder / 'rendered/hermes.yaml').write_text('')
                         return []
-                    with patch.object(host, 'snapshot', return_value=before), \
+                    with patch.object(host, 'recovery_backend', return_value=SimpleNamespace(preflight=lambda ns: None)), \
+                         patch.object(host, 'snapshot', return_value=before), \
                          patch.object(host, 'STATE', directory / 'state'), \
                          patch.object(host, 'module', return_value=SimpleNamespace(resolve=lambda: images)), \
                          patch.object(host, 'render', side_effect=render), \
