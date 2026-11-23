@@ -511,7 +511,11 @@ def recovery_worker(p, folder, plan):
                     if key:
                         image = deployment['spec']['template']['spec']['containers'][0]['image']
                         if '@sha256:' not in image:
-                            require('@sha256:' in configured[key] and configured[key].split('@', 1)[0] == image,
+                            reviewed_tag = configured[key].split('@', 1)[0]
+                            # Docker's implicit registry is a valid alias, not a new image pin.
+                            same_tag = image == reviewed_tag or (reviewed_tag.startswith('docker.io/') and
+                                                                  image == reviewed_tag[len('docker.io/'):])
+                            require('@sha256:' in configured[key] and same_tag,
                                     'Restored legacy image tag needs matching reviewed pins; reconcile configuration without replaying restore')
                         else:
                             restored_pins[key] = image

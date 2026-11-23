@@ -127,7 +127,7 @@ class Coordinator(unittest.TestCase):
     def pin_fixture(self):
         images = {key: 'example/image:v1.2.3@sha256:' + 'a' * 64 for key in
                   ['HERMES_AGENT_IMAGE', 'HERMES_WEBUI_IMAGE', 'HERMES_BROWSER_IMAGE']}
-        data = '# keep comment\nHERMES_NAMESPACE=fixture\nOTHER_VALUE=keep\n' + ''.join(k + '=example/image:v1.2.2@sha256:' + 'b' * 64 + '\n' for k in images)
+        data = '# keep comment\nHERMES_NAMESPACE=fixture\nOTHER_VALUE=keep\n' + ''.join(k + '=docker.io/example/image:v1.2.2@sha256:' + 'b' * 64 + '\n' for k in images)
         source, protected = self.root / 'hermes.env', self.root / 'protected.env'
         source.write_text(data); protected.write_text(data)
         folder = self.root / 'operation'; folder.mkdir(mode=0o700)
